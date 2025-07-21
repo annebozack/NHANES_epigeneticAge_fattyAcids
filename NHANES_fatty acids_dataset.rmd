@@ -1,0 +1,328 @@
+---
+title: "NHANES EAA and fatty acid intake: Datasets"
+author: "Anne Bozack"
+output: 
+    html_document:
+        code_folding: 
+        toc: true
+        toc_float: true
+---
+
+
+## Libraries
+```{r, eval = F}
+library(haven)
+library(tidyverse)
+library(table1)
+library(ggplot2)
+library(Metrics)
+library(ggtext)
+library(corrplot)
+```
+
+## Data
+```{r, eval = F}
+# Download individual datasets from the NHANES website:   
+# https://wwwn.cdc.gov/nchs/nhanes/continuousnhanes/default.aspx?BeginYear=1999  
+# https://wwwn.cdc.gov/nchs/nhanes/continuousnhanes/default.aspx?BeginYear=2001
+
+# clocks dataset
+clocks <- read_sas("dnmepi.sas7bdat") 
+#  Participants who were part of the eligible population but who did not provide a blood specimen for DNA, 
+#  did not have sufficient volume of DNA specimens, or did not give consent for their specimens to be used 
+#  for future research are included in the file, but they have a sample weight assigned “0” in their records. 
+table(clocks$WTDN4YR == 0, is.na(clocks$HorvathAge))
+#         FALSE TRUE
+#   FALSE  2532    0
+#   TRUE      0 1917 
+clocks <- clocks %>% filter(!is.na(HorvathAge)) # half the dataset is blank, 2532 true sample size
+dim(clocks)
+# 2532   32
+
+# demographics
+demo_1999 <- read_xpt("DEMO.XPT") 
+demo_2001 <- read_xpt("DEMO_B.XPT")
+subs <- intersect(colnames(demo_1999), colnames(demo_2001)) 
+demo_1999 <- demo_1999 %>% dplyr::select(all_of(subs))
+demo_2001 <- demo_2001 %>% dplyr::select(all_of(subs))
+demo <- rbind(demo_1999, demo_2001)
+df <- left_join(clocks, demo, by = "SEQN")
+rm(list = setdiff(ls(), c("df")))
+
+# smoking 
+smoke_1999 <- read_xpt("SMQ.XPT")
+smoke_2001 <- read_xpt("SMQ_B.XPT")
+subs <- intersect(colnames(smoke_1999), colnames(smoke_2001))
+smoke_1999 <- smoke_1999 %>% dplyr::select(all_of(subs))
+smoke_2001 <- smoke_2001 %>% dplyr::select(all_of(subs))
+smoke <- rbind(smoke_1999, smoke_2001)
+df <- left_join(df, smoke, by = "SEQN")
+
+# BMI 
+bmi_1999 <- read_xpt("BMX.XPT")
+bmi_2001 <- read_xpt("BMX_B.XPT")
+subs <- intersect(colnames(bmi_1999), colnames(bmi_2001))
+bmi_1999 <- bmi_1999 %>% dplyr::select(all_of(subs))
+bmi_2001 <- bmi_2001 %>% dplyr::select(all_of(subs))
+bmi <- rbind(bmi_1999, bmi_2001)
+df <- left_join(df, bmi, by = "SEQN")
+
+# add physical activity
+active_1999 <- read_xpt("PAQ.XPT")
+active_2001 <- read_xpt("PAQ_B.XPT")
+subs <- intersect(colnames(active_1999), colnames(active_2001))
+active_1999 <- active_1999 %>% dplyr::select(all_of(subs))
+active_2001 <- active_2001 %>% dplyr::select(all_of(subs))
+active <- rbind(active_1999, active_2001)
+df <- left_join(df, active, by = "SEQN")
+
+# add recoded occupation 
+occ_1999 <- read_xpt("OCQ.XPT")
+occ_2001 <- read_xpt("OCQ_B.XPT")
+subs <- intersect(colnames(occ_1999), colnames(occ_2001))
+occ_1999 <- occ_1999 %>% dplyr::select(all_of(subs))
+occ_2001 <- occ_2001 %>% dplyr::select(all_of(subs))
+occ <- rbind(occ_1999, occ_2001)
+# creating 5 category occupational classification as used in Rehkopf et al, BMC Public Health 2006;
+# based on two dimensions of occupation, white-collar versus blue collar and technical skill;
+# based conceptually on the NS-SEC job classification
+occ$hiwhite <- ifelse((occ$OCD390 %in% c(1:7,9,25)),1,0) 
+occ$hiwhite[is.na(occ$OCD390)] <- NA
+occ$lowwhite <- ifelse((occ$OCD390 %in% c(8,10,12:16,22)),1,0) 
+occ$lowwhite[is.na(occ$OCD390)] <- NA
+occ$hiblue <- ifelse((occ$OCD390 %in% c(28:31,41)),1,0) 
+occ$hiblue[is.na(occ$OCD390)] <- NA
+occ$lowblue <- ifelse((occ$OCD390 %in% c(11,17:21,23,24,26,27,32:40)),1,0) 
+occ$lowblue[is.na(occ$OCD390)] <- NA
+occ$nowork <- ifelse(occ$OCD390==98,1,0) 
+occ$nowork[is.na(occ$OCD390)] <- NA
+
+# Use ocd 240 current job to fill the missing
+occ$hiwhite[occ$OCD240 %in% c(1:7,9,25) & is.na(occ$hiwhite)] <- 1
+occ$hiwhite[occ$OCD240 %in% c(1:41,98) & is.na(occ$hiwhite)] <- 0
+occ$lowwhite[occ$OCD240 %in% c(8,10,12:16,22) & is.na(occ$lowwhite)] <- 1
+occ$lowwhite[occ$OCD240 %in% c(1:41,98) & is.na(occ$lowwhite)] <- 0
+occ$hiblue[occ$OCD240 %in% c(28:31,41) & is.na(occ$hiblue)] <- 1
+occ$hiblue[occ$OCD240 %in% c(1:41,98) & is.na(occ$hiblue)] <- 0
+occ$lowblue[occ$OCD240 %in% c(11,17:21,23,24,26,27,32:40) & is.na(occ$lowblue)] <- 1
+occ$lowblue[occ$OCD240 %in% c(1:41,98) & is.na(occ$lowblue)] <- 0
+occ$nowork[occ$OCD240 == 98 & is.na(occ$nowork)] <- 1
+occ$nowork[occ$OCD240 %in% c(1:41,98) & is.na(occ$nowork)] <- 0
+
+occ <- occ %>% 
+  mutate(OCCUPATION = ifelse(hiwhite == 1, "hiwhite", 
+                      ifelse(lowwhite == 1, "lowwhite", 
+                      ifelse(hiblue == 1, "hiblue", 
+                      ifelse(lowblue == 1, "lowblue", 
+                      ifelse(nowork == 1, "nowork", NA)))))) %>% 
+  dplyr::select(SEQN, OCCUPATION)
+df <- left_join(df, occ, by = "SEQN")
+
+# add dietrary data
+diet_1999 <- read_xpt("DRXTOT.XPT")
+diet_2001 <- read_xpt("DRXTOT_B.XPT")
+diet_2001 <- diet_2001 %>% dplyr::rename(DRDDRSTS = DRDDRSTZ)
+subs <- intersect(colnames(diet_1999), colnames(diet_2001))
+diet_1999 <- diet_1999 %>% dplyr::select(all_of(subs))
+diet_2001 <- diet_2001 %>% dplyr::select(all_of(subs))
+diet <- rbind(diet_1999, diet_2001)
+df <- left_join(df, diet, by = "SEQN")
+
+# add alcohol intake
+alc <- read.csv("drinkvol_update_11_06_2024.csv")
+df <- left_join(df, alc, by = "SEQN")
+rm(list = setdiff(ls(), c("df")))
+
+# variable to indicate participants < 85
+df$lt85 = ifelse(df$RIDAGEYR != 85, 1, 0)
+table(df$lt85)
+#    0    1 
+#  130 2402
+
+# variable to indicate sex mismatches
+df$sexMismatch = ifelse(df$RIAGENDR != df$XY_Estimation, 0, 1)
+table(df$sexMismatch)
+#    0    1 
+# 2472   60 
+
+# add variable for participants < 85 and without a sex mismatch
+df$use = TRUE
+df$use[df$lt85 == 0] = FALSE
+df$use[df$sexMismatch == 1 | is.na(df$sexMismatch)] = FALSE
+table(df$use)
+# FALSE  TRUE
+#   186  2346 
+# sort
+df = df[order(df$use, decreasing = T),]
+table(df$use[c(1:2346)])
+# TRUE 
+# 2346 
+
+# calculate scaled version of YangCell
+df$YangCell_scale = NA
+df$YangCell_scale[c(1:2346)] = scale(df$YangCell[c(1:2346)])
+
+# calculate scaled version of DunedinPoAm
+df$DunedinPoAm_scale = NA
+df$DunedinPoAm_scale[c(1:2346)] = scale(df$DunedinPoAm[c(1:2346)])
+
+# recoding covatiates
+df <- df %>% 
+  mutate(SMOKE_3cat = ifelse(SMQ020 == 2, "Never", 
+                      ifelse(SMQ020 == 1  & SMQ040 == 1 | SMQ040 == 2, "Current", 
+                      ifelse(SMQ020 == 1  & SMQ040 == 3, "Former", NA))))
+df$SMOKE_3cat = factor(df$SMOKE_3cat, levels = c('Never', 'Former', 'Current'))
+
+df <- df %>% 
+  mutate(SMOKE_2cat = ifelse(SMQ020 == 2, "Never", 
+                      ifelse(SMQ020 == 1, "Ever", NA)))
+df$SMOKE_2cat = factor(df$SMOKE_2cat, levels = c('Never', 'Ever'))
+
+df <- df %>% 
+  mutate(SMOKE_2cat_current = ifelse(SMQ020 == 2 | (SMQ020 == 1  & SMQ040 == 3), "No", 
+                      ifelse(SMQ020 == 1  & SMQ040 == 1 | SMQ040 == 2, "Current", NA)))
+df$SMOKE_2cat_current = factor(df$SMOKE_2cat_current, levels = c('No', 'Current'))
+
+df$EDUCATION <- ifelse(df$DMDEDUC == 1, "Less Than High School",
+    ifelse(df$DMDEDUC == 2, "High School Diploma (including GED)",
+    ifelse(df$DMDEDUC == 3, "More Than High School", NA)))
+
+# variable for yes/no moderate physical activiy
+df$active_mod = ifelse(df$PAD320 == 1, 'Yes',
+                    ifelse(df$PAD320 == 2 | df$PAD320 == 3, 'No', NA))
+df$active_mod = factor(df$active_mod, levels = c('No', 'Yes'))
+
+# variable for yes/no moderate or vigourous physical activiy
+df$active_vig = ifelse(df$PAD200 == 1, 'Yes',
+                    ifelse(df$PAD200 == 2 | df$PAD200 == 3, 'No', NA))
+df$active_vig = factor(df$active_vig, levels = c('No', 'Yes'))
+
+df$active_modvig = ifelse(df$active_mod == 'Yes' | df$active_vig == 'Yes', 'Yes',
+                      ifelse(df$active_mod == 'No' & df$active_vig == 'No', 'No', NA))
+df$active_modvig = factor(df$active_modvig, levels = c('No', 'Yes'))
+table(df$active_modvig)
+#   No  Yes 
+# 1415 1115 
+
+# participants with reliable dietary data
+table(df$DRDDRSTS[df$use])
+#    1    2    3    5 
+# 2260   13    4   69 
+
+# variable for participants to use with reliable dietary data
+df$use_fat = ifelse(df$use & df$DRDDRSTS == 1, TRUE, FALSE)
+table(df$use_fat)
+# FALSE  TRUE 
+#   272  2260 
+
+# filter individuals with extreme energy intake
+# < 500 or > 8000 kcal/day for men
+table(df[df$RIAGENDR == 1 & df$use_fat,]$DRXTKCAL < 500)
+# FALSE  TRUE 
+#  1142    12
+table(df[df$RIAGENDR == 1 & df$use_fat,]$DRXTKCAL > 8000)
+# FALSE  TRUE 
+#  1153     1 
+table(df[df$RIAGENDR == 2 & df$use_fat,]$DRXTKCAL < 500)
+# FALSE  TRUE 
+#  1079    27 
+table(df[df$RIAGENDR == 2 & df$use_fat,]$DRXTKCAL > 5000)
+# FALSE 
+#  1106 
+
+# variable for participants to use without extreme energy intake
+df$use_fat = ifelse(df$use_fat & ((df$RIAGENDR == 1 & df$DRXTKCAL >= 500 & df$DRXTKCAL <= 8000) | (df$RIAGENDR == 2 & df$DRXTKCAL >= 500)), TRUE, FALSE)
+table(df$use_fat)
+# FALSE  TRUE 
+#   312  2220 
+
+# variable for participants to use and with complete covariate data
+df$use_fat_covar = ifelse(df$use_fat & !is.na(df$RIDAGEYR) & !is.na(df$RIAGENDR) & !is.na(df$RIDRETH1) & 
+    !is.na(df$BMXBMI) & !is.na(df$DRXTKCAL) & !is.na(df$EDUCATION) & !is.na(df$OCCUPATION) & !is.na(df$INDFMPIR) & 
+    !is.na(df$SMOKE_3cat) & !is.na(df$drinkvol) & !is.na(df$active_modvig), TRUE, FALSE)
+table(df$use_fat_covar)
+# FALSE  TRUE 
+#  761  1771 
+
+# polyunsaturated fat to saturated fat ratio
+df$psatfatRatio = df$DRXTPFAT/df$DRXTSFAT
+
+# omega-6 and omega-3 intake
+# https://pmc.ncbi.nlm.nih.gov/articles/PMC7103069/#Sec2 and https://pmc.ncbi.nlm.nih.gov/articles/PMC6627798/ for classification
+# octadecatrienoic acid (18:3), octadecatetraenoic acid (18:4), eicosapentaenoic acid (20:5), docosapentanoic acid (22:5), and docosahexaenoic acid (22:6) were included in ω-3 fatty acids, 
+# meanwhile octadecadienoic acid (18:2) and eicosatetraenoic acid (20:4) were included in ω-6 fatty acids 
+df$omega6 = df$DRXTP182 + df$DRXTP204 
+df$omega3 = df$DRXTP183 + df$DRXTP184 + df$DRXTP205 + df$DRXTP225 + df$DRXTP226
+
+# log2 transformations
+fats = c('DRXTTFAT', 'DRXTSFAT', 'DRXTMFAT', 'DRXTPFAT', "DRXTS040", "DRXTS060", "DRXTS080", "DRXTS100", "DRXTS120", "DRXTS140", "DRXTS160", "DRXTS180", "DRXTM161", "DRXTM181", "DRXTM201", "DRXTM221", "omega6", "DRXTP182", "DRXTP204", "omega3", "DRXTP183", "DRXTP184", "DRXTP205", "DRXTP225", "DRXTP226")
+for (i in 1:length(fats)){
+    if (sum(df[df$use_fat,][[fats[i]]] == 0) > 0){
+        new = df[[fats[i]]] + 0.0001
+    } else {
+        new = df[[fats[i]]]
+    }
+    new = log2(new)
+    df[[as.symbol(paste0(fats[i], '_log2'))]] <- new
+}
+
+# add a variable for calories from fat
+df$cal_fat = df$DRXTTFAT*9
+df$cal_fat_perc = df$cal_fat/df$DRXTKCAL
+df$cal_sfat = df$DRXTSFAT*9
+df$cal_sfat_perc = df$cal_sfat/df$DRXTKCAL
+df$cal_mfat = df$DRXTMFAT*9
+df$cal_mfat_perc = df$cal_mfat/df$DRXTKCAL
+df$cal_pfat = df$DRXTPFAT*9
+df$cal_pfat_perc = df$cal_pfat/df$DRXTKCAL
+
+# save data
+save(df, file = "nhanes_fattyAcids_clean_data.RData")
+
+rm(list = setdiff(ls(), c("df")))
+```
+
+
+## Descriptive statistics: Tables 2 and S1 
+```{r}
+# complete cases
+table1(~ factor(RIAGENDR) + RIDAGEYR + factor(RIDRETH1) + BMXBMI + factor(SMOKE_3cat) + drinkvol + 
+    factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR + DRXTKCAL +
+    DRXTTFAT + cal_fat_perc + DRXTSFAT + cal_sfat_perc + DRXTMFAT + cal_mfat_perc + DRXTPFAT + cal_pfat_perc + psatfatRatio + omega6 + omega3, 
+    data = df[df$use_fat_covar,])
+
+# participants for impuation analyses
+table1(~ factor(RIAGENDR) + RIDAGEYR + factor(RIDRETH1) + BMXBMI + factor(SMOKE_3cat) + drinkvol + 
+    factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR + DRXTKCAL +
+    DRXTTFAT + cal_fat_perc + DRXTSFAT + cal_sfat_perc + DRXTMFAT + cal_mfat_perc + DRXTPFAT + cal_pfat_perc + psatfatRatio + omega6 + omega3, 
+    data = df[df$use_fat,])
+```
+
+## Fatty acid subtypes: Table S2
+```{r}
+# complete cases
+table1(~ DRXTS040 + DRXTS060 + DRXTS080 + DRXTS100 + DRXTS120 + DRXTS140 + DRXTS160 + DRXTS180 + DRXTM161 + DRXTM181 + DRXTM201 + DRXTM221 + 
+        DRXTP182 + DRXTP204 + DRXTP183 + DRXTP184 + DRXTP205 + DRXTP225 + DRXTP226, data = df[df$use_fat_covar,])
+
+# participants for impuation analyses
+table1(~ DRXTS040 + DRXTS060 + DRXTS080 + DRXTS100 + DRXTS120 + DRXTS140 + DRXTS160 + DRXTS180 + DRXTM161 + DRXTM181 + DRXTM201 + DRXTM221 + 
+        DRXTP182 + DRXTP204 + DRXTP183 + DRXTP184 + DRXTP205 + DRXTP225 + DRXTP226, data = df[df$use_fat,])
+```
+
+```{r, eval = F}
+# participants with 0 values
+subtypes = c('DRXTS040', 'DRXTS060', 'DRXTS080', 'DRXTS100', 'DRXTS120', 'DRXTS140', 'DRXTS160', 'DRXTS180', 'DRXTM161', 'DRXTM181', 'DRXTM201', 'DRXTM221', 
+        'DRXTP182', 'DRXTP204', 'DRXTP183', 'DRXTP184', 'DRXTP205', 'DRXTP225', 'DRXTP226')
+
+for (i in 1:length(subtypes)){
+    print(subtypes[i])
+    print(table(df[df$use_fat_covar,subtypes[i]] == 0))
+    print(table(df[df$use_fat_covar,subtypes[i]] == 0)/1771)
+}
+
+for (i in 1:length(subtypes)){
+    print(subtypes[i])
+    print(table(df[df$use_fat,subtypes[i]] == 0))
+    print(table(df[df$use_fat,subtypes[i]] == 0)/2220)
+}
+```

@@ -1,0 +1,643 @@
+---
+title: "NHANES EAA and fatty acid intake: Plotting"
+author: "Anne Bozack"
+output: 
+    html_document:
+        code_folding: 
+        toc: true
+        toc_float: true
+---
+
+
+## Libraries
+```{r, eval = F}
+library(tidyverse)
+library(gridExtra)
+library(ggsci)
+library(jtools)
+library(ggh4x)
+library(ggtext)
+library(survey)
+library(corrplot)
+```
+
+
+## Survey design
+```{r, eval = F}
+load("nhanes_fattyAcids_clean_data.RData")
+
+# specify survey design
+nhanesDesign <- svydesign(id = ~SDMVPSU,  # Primary Sampling Units (PSU)
+                 strata  = ~SDMVSTRA, # Stratification used in the survey
+                 weights = ~WTDN4YR,   # Survey weights (using those from DNAm dataset, may need to update)
+                 nest    = TRUE,      # Whether PSUs are nested within strata
+                 data    = df)       # specify dataset
+dim(nhanesDesign)
+# 2532  288
+
+# subset survey design
+nhanesDesign_use <- subset(nhanesDesign, use_fat)
+dim(nhanesDesign_use)
+# 2220  288
+
+# complete cases
+nhanesDesign_use_covar <- subset(nhanesDesign, use_fat_covar)
+dim(nhanesDesign_use_covar)
+# 1771  288
+```
+
+
+## Correlations of fatty acids: Figures S2 and S3
+```{r, eval = F}
+# total fatty acids
+types = c("DRXTTFAT", "DRXTSFAT", "DRXTMFAT", "DRXTPFAT", "omega6", "omega3", "psatfatRatio")
+
+cormat = data.frame(matrix(nrow = 7, ncol = 7))
+rownames(cormat) = types
+colnames(cormat) = types
+cormatp = data.frame(matrix(nrow = 7, ncol = 7))
+rownames(cormatp) = types
+colnames(cormatp) = types
+
+for (i in 1:nrow(cormat)){
+    for (j in 1:ncol(cormat)){
+        set.seed(123)
+        corRes = svycor(~ df[df$use_fat_covar,][[rownames(cormat)[i]]] + df[df$use_fat_covar,][[colnames(cormat)[j]]], design = nhanesDesign_use_covar, digits = 4, sig.stats = TRUE,  na.rm = T)
+        cormat[i,j] = corRes$cor[1,2]
+        cormatp[i,j] = corRes$p.values[1,2]
+    }
+}
+
+rownames(cormat) = c('Total fatty acids', 'SFA', 'MUFA', 'PUFA', 'Omega-6', 'Omega-3', 'P:S ratio')
+colnames(cormat) = c('Total fatty acids', 'SFA', 'MUFA', 'PUFA', 'Omega-6', 'Omega-3', 'P:S ratio')
+rownames(cormatp) = c('Total fatty acids', 'SFA', 'MUFA', 'PUFA', 'Omega-6', 'Omega-3', 'P:S ratio')
+colnames(cormatp) = c('Total fatty acids', 'SFA', 'MUFA', 'PUFA', 'Omega-6', 'Omega-3', 'P:S ratio')
+
+cols = colorRampPalette(c("#C74632", "white", "#007C92"), interpolate = 'linear')
+
+corrplot(as.matrix(cormat), p.mat = as.matrix(cormatp), sig.level = 0.05, method = 'color', type = 'lower', insig='blank',
+         addCoef.col ='black', diag=FALSE, tl.col = 'black', tl.srt = 45, col = cols(150))
+quartz.save('cor_heatmap.png', dpi = 300, bg = 'white')
+
+
+# Fatty acid subtypes
+subtypes = c("DRXTS040", "DRXTS060", "DRXTS080", "DRXTS100", "DRXTS120", "DRXTS140", "DRXTS160", "DRXTS180", 
+        "DRXTM161", "DRXTM181", "DRXTM201", "DRXTM221", 
+        "DRXTP182", "DRXTP204", "DRXTP183", "DRXTP184", "DRXTP205", "DRXTP225", "DRXTP226")
+
+cormat = data.frame(matrix(nrow = 19, ncol = 19))
+rownames(cormat) = subtypes
+colnames(cormat) = subtypes
+cormatp = data.frame(matrix(nrow = 19, ncol = 19))
+rownames(cormatp) = subtypes
+colnames(cormatp) = subtypes
+
+for (i in 1:nrow(cormat)){
+    for (j in 1:ncol(cormat)){
+        set.seed(123)
+        corRes = svycor(~ df[df$use_fat_covar,][[rownames(cormat)[i]]] + df[df$use_fat_covar,][[colnames(cormat)[j]]], design = nhanesDesign_use_covar, digits = 4, sig.stats = TRUE,  na.rm = T)
+        cormat[i,j] = corRes$cor[1,2]
+        cormatp[i,j] = corRes$p.values[1,2]
+    }
+}
+
+rownames(cormat) = c('SFA 4:0', 'SFA 6:0', 'SFA 8:0', 'SFA 10:0', 'SFA 12:0', 'SFA 14:0', 'SFA 16:0', 'SFA 18:0',
+        'MUFA 16:1', 'MUFA 18:1', 'MUFA 20:1', 'MUFA 22:1',
+        'PUFA 18:2', 'PUFA 20:4', 'PUFA 18:3', 'PUFA 18:4', 'PUFA 20:5', 'PUFA 22:5', 'PUFA 22:6')
+colnames(cormat) = c('SFA 4:0', 'SFA 6:0', 'SFA 8:0', 'SFA 10:0', 'SFA 12:0', 'SFA 14:0', 'SFA 16:0', 'SFA 18:0',
+        'MUFA 16:1', 'MUFA 18:1', 'MUFA 20:1', 'MUFA 22:1',
+        'PUFA 18:2', 'PUFA 20:4', 'PUFA 18:3', 'PUFA 18:4', 'PUFA 20:5', 'PUFA 22:5', 'PUFA 22:6')
+rownames(cormatp) = c('SFA 4:0', 'SFA 6:0', 'SFA 8:0', 'SFA 10:0', 'SFA 12:0', 'SFA 14:0', 'SFA 16:0', 'SFA 18:0',
+        'MUFA 16:1', 'MUFA 18:1', 'MUFA 20:1', 'MUFA 22:1',
+        'PUFA 18:2', 'PUFA 20:4', 'PUFA 18:3', 'PUFA 18:4', 'PUFA 20:5', 'PUFA 22:5', 'PUFA 22:6')
+colnames(cormatp) = c('SFA 4:0', 'SFA 6:0', 'SFA 8:0', 'SFA 10:0', 'SFA 12:0', 'SFA 14:0', 'SFA 16:0', 'SFA 18:0',
+        'MUFA 16:1', 'MUFA 18:1', 'MUFA 20:1', 'MUFA 22:1',
+        'PUFA 18:2', 'PUFA 20:4', 'PUFA 18:3', 'PUFA 18:4', 'PUFA 20:5', 'PUFA 22:5', 'PUFA 22:6')
+
+corrplot(as.matrix(cormat), p.mat = as.matrix(cormatp), sig.level = 0.05, method = 'color', type = 'lower', insig='blank',
+         addCoef.col ='black', diag=FALSE, number.cex = 0.7, tl.col = 'black', tl.srt = 45, col = cols(150))
+quartz.save('cor_heatmap_subtypes.png', dpi = 300, bg = 'white')
+```
+
+
+```{r, out.width = '100%', echo = FALSE}
+knitr::include_graphics("cor_heatmap.png")
+```
+
+```{r, out.width = '100%', echo = FALSE}
+knitr::include_graphics("cor_heatmap_subtypes.png")
+```
+
+
+## Performance of clocks: Figure S4
+```{r, eval = F}
+# Horvath1
+cor.test(df[df$use_fat_covar,]$RIDAGEYR, df[df$use_fat_covar,]$HorvathAge)
+# p-value < 2.2e-16
+#       cor 
+# 0.8108256
+mdae(df[df$use_fat_covar,]$HorvathAge, df[df$use_fat_covar,]$RIDAGEYR)
+# 3.415103
+p_Horvath1 = ggplot(df[df$use_fat_covar,], aes(RIDAGEYR, HorvathAge)) + geom_abline(linewidth = 0.5) + geom_point(size = 0.5, alpha = 0.13) + theme_minimal() + 
+    labs(title = '', subtitle = '*r* = 0.81; MAE = 3.4', x = '', y = 'Horvath1 age (yrs)') +
+    theme(title = ggtext::element_markdown()) + theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5, size=10))
+
+# Horvath2
+cor.test(df[df$use_fat_covar,]$RIDAGEYR, df[df$use_fat_covar,]$SkinBloodAge)
+# p-value < 2.2e-16
+#       cor 
+# 0.886562 
+mdae(df[df$use_fat_covar,]$SkinBloodAge, df[df$use_fat_covar,]$RIDAGEYR)
+# 2.704216
+p_Horvath2 = ggplot(df[df$use_fat_covar,], aes(RIDAGEYR, SkinBloodAge)) + geom_abline(linewidth = 0.5) + geom_point(size = 0.5,alpha = 0.13) + theme_minimal() + 
+    labs(title = '', subtitle = '*r* = 0.88; MAE = 2.7', x = '', y = 'Horvath2 age (yrs)') +
+    theme(title = ggtext::element_markdown()) + theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5, size=10))
+
+# Hannum
+cor.test(df[df$use_fat_covar,]$RIDAGEYR, df[df$use_fat_covar,]$HannumAge)
+# p-value < 2.2e-16
+#       cor 
+# 0.8327451 
+mdae(df[df$use_fat_covar,]$HannumAge, df[df$use_fat_covar,]$RIDAGEYR)
+# 3.439369
+p_Hannum = ggplot(df[df$use_fat_covar,], aes(RIDAGEYR, HannumAge)) + geom_abline(linewidth = 0.5) + geom_point(size = 0.5,alpha = 0.13) + theme_minimal() + 
+    labs(title = '', subtitle = '*r* = 0.83; MAE = 3.4', x = '', y = 'Hannum age (yrs)') +
+    theme(title = ggtext::element_markdown()) + theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5, size=10))
+
+# PhenoAge
+cor.test(df[df$use_fat_covar,]$RIDAGEYR, df[df$use_fat_covar,]$PhenoAge)
+# p-value < 2.2e-16
+#       cor 
+# 0.7708184 
+mdae(df[df$use_fat_covar,]$PhenoAge, df[df$use_fat_covar,]$RIDAGEYR)
+# 10.29888
+p_PhenoAge = ggplot(df[df$use_fat_covar,], aes(RIDAGEYR, PhenoAge)) + geom_abline(linewidth = 0.5) + geom_point(size = 0.5, alpha = 0.13) + theme_minimal() + 
+    labs(title = '', subtitle = '*r* = 0.77; MAE = 10.3', x = '', y = 'PhenoAge (yrs)') +
+    theme(title = ggtext::element_markdown()) + theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5, size=10))
+
+# GrimAge2
+cor.test(df[df$use_fat_covar,]$RIDAGEYR, df[df$use_fat_covar,]$GrimAge2Mort)
+# p-value < 2.2e-16
+#       cor 
+# 0.7852308 
+mdae(df[df$use_fat_covar,]$GrimAge2Mort, df[df$use_fat_covar,]$RIDAGEYR)
+# 5.981102
+p_GrimAge2 = ggplot(df[df$use_fat_covar,], aes(RIDAGEYR, GrimAge2Mort)) + geom_abline(linewidth = 0.5) + geom_point(size = 0.5, alpha = 0.13) + theme_minimal() + 
+    labs(title = '', subtitle = '*r* = 0.79; MAE = 6.0', x = '', y = 'GrimAge2 (yrs)') +
+    theme(title = ggtext::element_markdown()) + theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5, size=10))
+
+# DunedinPoAm
+cor.test(df[df$use_fat_covar,]$RIDAGEYR, df[df$use_fat_covar,]$DunedinPoAm)
+# p-value = 0.0088
+#       cor 
+# 0.06223489 
+p_DunedinPoAm = ggplot(df[df$use_fat_covar,], aes(RIDAGEYR, DunedinPoAm)) + geom_point(size = 0.5, alpha = 0.13) + theme_minimal() + 
+    labs(title = '', subtitle = '*r* = 0.06', x = '', y = 'DunedinPoAm') +
+    theme(title = ggtext::element_markdown()) + theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5, size=10))
+
+# DNAmTL
+cor.test(df[df$use_fat_covar,]$RIDAGEYR, df[df$use_fat_covar,]$HorvathTelo)
+# p-value < 2.2e-16
+#       cor 
+# -0.5922631 
+p_DNAmTL = ggplot(df[df$use_fat_covar,], aes(RIDAGEYR, HorvathTelo)) + geom_point(size = 0.5, alpha = 0.13) + theme_minimal() + 
+    labs(title = '', subtitle = '*r* = -0.59', x = '', y = 'DNAmTL (kb)') +
+    theme(title = ggtext::element_markdown()) + theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5, size=10))
+
+# Lin (99 CpGs)
+cor.test(df[df$use_fat_covar,]$RIDAGEYR, df[df$use_fat_covar,]$LinAge)
+# p-value < 2.2e-16
+#       cor 
+# 0.7699487  
+mdae(df[df$use_fat_covar,]$LinAge, df[df$use_fat_covar,]$RIDAGEYR)
+# 8.938142
+p_Lin = ggplot(df[df$use_fat_covar,], aes(RIDAGEYR, LinAge)) + geom_abline(linewidth = 0.5) + geom_point(size = 0.5, alpha = 0.13) + theme_minimal() + 
+    labs(title = '', subtitle = '*r* = 0.77; MAE = 8.9', x = '', y = 'Lin (yrs)') +
+    theme(title = ggtext::element_markdown()) + theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5, size=10))
+
+# Weidner (3 CpG model)
+cor.test(df[df$use_fat_covar,]$RIDAGEYR, df[df$use_fat_covar,]$WeidnerAge)
+# p-value < 2.2e-16
+#       cor 
+# 0.5532417 
+mdae(df[df$use_fat_covar,]$WeidnerAge, df[df$use_fat_covar,]$RIDAGEYR)
+# 11.22934
+p_Weidner = ggplot(df[df$use_fat_covar,], aes(RIDAGEYR, WeidnerAge)) + geom_abline(linewidth = 0.5) + geom_point(size = 0.5, alpha = 0.13) + theme_minimal() + 
+    labs(title = '', subtitle = '*r* = 0.55; MAE = 11.2', x = '', y = 'Weidner (yrs)') +
+    theme(title = ggtext::element_markdown()) + theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5, size=10))
+
+# Vidal-Bralo (8 CpG model)
+cor.test(df[df$use_fat_covar,]$RIDAGEYR, df[df$use_fat_covar,]$VidalBraloAge)
+# p-value < 2.2e-16
+#       cor 
+# 0.6169524 
+mdae(df[df$use_fat_covar,]$VidalBraloAge, df[df$use_fat_covar,]$RIDAGEYR)
+# 5.99747
+p_VidalBralo = ggplot(df[df$use_fat_covar,], aes(RIDAGEYR, VidalBraloAge)) + geom_abline(linewidth = 0.5) + geom_point(size = 0.5, alpha = 0.13) + theme_minimal() + 
+    labs(title = '', subtitle = '*r* = 0.62; MAE = 6.0', x = '', y = 'Vidal-Bralo (yrs)') +
+    theme(title = ggtext::element_markdown()) + theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5, size=10))
+
+# Zhang
+cor.test(df[df$use_fat_covar,]$RIDAGEYR, df[df$use_fat_covar,]$ZhangAge)
+# p-value < 2.2e-16
+#       cor 
+# 0.9106419
+mdae(df[df$use_fat_covar,]$ZhangAge, df[df$use_fat_covar,]$RIDAGEYR)
+# 5.004489
+p_Zhang = ggplot(df[df$use_fat_covar,], aes(RIDAGEYR, ZhangAge)) + geom_abline(linewidth = 0.5) + geom_point(size = 0.5, alpha = 0.13) + theme_minimal() + 
+    labs(title = '', subtitle = '*r* = 0.91; MAE = 5.0', x = '', y = 'Zhang (yrs)') +
+    theme(title = ggtext::element_markdown()) + theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5, size=10))
+
+# Yang Cell
+cor.test(df[df$use_fat_covar,]$RIDAGEYR, df[df$use_fat_covar,]$YangCell)
+# p-value < 2.2e-16
+#       cor 
+# 0.2201798 
+p_YangCell = ggplot(df[df$use_fat_covar,], aes(RIDAGEYR, YangCell)) + geom_point(size = 0.5, alpha = 0.13) + theme_minimal() + 
+    labs(title = '', subtitle = '*r* = 0.22', x = '', y = 'epiTOC') +
+    theme(title = ggtext::element_markdown()) + theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5, size=10)) 
+
+blank = ggplot() + theme_void()
+
+g1 = grid.arrange(p_Horvath1, p_Horvath2, p_Hannum, p_Lin, p_Zhang, p_VidalBralo, 
+    left = textGrob("First generation\n", rot = 90, vjust = 1, gp = gpar(cex = 1.25)), 
+    bottom = textGrob('Chronological age (yrs)\n'), 
+    nrow = 3)
+
+g2 = grid.arrange(p_PhenoAge, p_GrimAge2, p_DNAmTL, p_YangCell,
+    p_DunedinPoAm, 
+    left = textGrob("     Pace of Aging                                               Second generation                      \n", rot = 90, vjust = 1, gp = gpar(cex = 1.25)), 
+    bottom = textGrob('Chronological age (yrs)\n'),
+    nrow = 3)
+
+grid.arrange(g1, blank, g2, ncol = 3, widths = c(1, 0.05, 1))
+grid.rect(width = 0.48, height = 0.945, gp = gpar(lwd = 0.5, color = 'darkgray', fill = NA), hjust = 1.01, vjust = 0.48)
+grid.rect(width = 0.471, height = 0.63, gp = gpar(lwd = 0.5, color = 'darkgray', fill = NA), hjust = -0.055, vjust = 0.22)
+grid.rect(width = 0.25, height = 0.308, gp = gpar(lwd = 0.5, color = 'darkgray', fill = NA), hjust = -0.105, vjust = 1.48)
+
+quartz.save('clocks_scatter.png', dpi = 300, bg = 'white')
+```
+
+```{r, out.width = '100%', echo = FALSE}
+knitr::include_graphics("clocks_scatter.png")
+```
+
+
+## Primary model: Figures 1 and 2
+```{r, eval = F}
+# load results
+fat_res_alcSmkAct = read.csv('fat_res_alcSmkAct.csv')[,-1]
+
+# columns for plotting
+fat_res_alcSmkAct$clock[fat_res_alcSmkAct$clock == 'VidalBralo'] = 'Vidal-Bralo'
+fat_res_alcSmkAct$clock[fat_res_alcSmkAct$clock == 'YangCell'] = 'epiTOC'
+fat_res_alcSmkAct$clock = factor(fat_res_alcSmkAct$clock, levels=rev(c(c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'Vidal-Bralo', 'PhenoAge', 'GrimAge2', 'DNAmTL', 'epiTOC', 'DunedinPoAm'))))
+fat_res_alcSmkAct$nutrient = factor(fat_res_alcSmkAct$nutrient, levels=c('Total fat', 'Saturated fat', 'Monounsaturated fat', 'Polyunsaturated fat', 'P:S ratio', 'Omega-6', 'Omega-3'))
+fat_res_alcSmkAct$alpha = ifelse(fat_res_alcSmkAct$p<0.05, 1, 0.95)
+fat_res_alcSmkAct$color = ifelse(fat_res_alcSmkAct$p<0.05, 1, 0)
+fat_res_alcSmkAct$group = rep(c(1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 4), times = 7)
+
+
+# plotting total fatty acids, SFA, MUFA, and PUFA
+df_fat1 = fat_res_alcSmkAct[fat_res_alcSmkAct$group == 1 & (fat_res_alcSmkAct$nutrient %in% c('Total fat', 'Saturated fat', 'Monounsaturated fat', 'Polyunsaturated fat')),]
+
+# correct labels
+df_fat1$B_CI[1] = '-0.59 (-1.40, 0.21)'
+df_fat1$B_CI[3] = '-0.20 (-1.08, 0.67)'
+df_fat1$B_CI[5] = '0.00 (-0.26, 0.25)'
+df_fat1$B_CI[7] = '-0.11 (-1.20, 0.98)'
+df_fat1$B_CI[8] = '0.50 (-0.10, 1.09)'
+df_fat1$B_CI[14] = '0.38 (-0.30, 1.05)'
+df_fat1$B_CI[17] = '-0.50 (-1.20, 0.20)'
+df_fat1$B_CI[27] = '-0.60 (-1.15, -0.06)'
+df_fat1$B_CI[32] = '-0.08 (-0.46, 0.30)'
+df_fat1$nutrient = as.character(df_fat1$nutrient)
+df_fat1$nutrient[df_fat1$nutrient == 'Total fat'] = 'Total fatty acids'
+df_fat1$nutrient[df_fat1$nutrient == 'Saturated fat'] = 'Saturated fatty acids'
+df_fat1$nutrient[df_fat1$nutrient == 'Monounsaturated fat'] = 'Monounsaturated fatty acids'
+df_fat1$nutrient[df_fat1$nutrient == 'Polyunsaturated fat'] = 'Polyunsaturated fatty acids'
+df_fat1$nutrient = factor(df_fat1$nutrient, levels = c('Total fatty acids', 'Saturated fatty acids', 'Monounsaturated fatty acids', 'Polyunsaturated fatty acids'))
+
+# first- and second-generation clocks
+f_fat1 = ggplot(data=df_fat1, aes(x=clock, y=coef, ymin=CI_L, ymax=CI_H)) +
+   geom_rect(ymin = -2, ymax = 2, xmin = 0.5, xmax = 1.5, fill = 'lightgray', alpha = 0.1) +
+   geom_rect(ymin = -2, ymax = 2, xmin = 2.5, xmax = 3.5, fill = 'lightgray', alpha = 0.1) +
+   geom_rect(ymin = -2, ymax = 2, xmin = 4.5, xmax = 5.5, fill = 'lightgray', alpha = 0.1) +
+   geom_rect(ymin = -2, ymax = 2, xmin = 6.5, xmax = 7.5, fill = 'lightgray', alpha = 0.1) +
+  geom_point(aes(color = factor(color)), size=1.5) + geom_errorbar(aes(color = factor(color)), size = 0.3, width = 0.3) +
+  geom_hline(yintercept=0, lty=2, linewidth = 0.3) + coord_flip() +
+  theme_bw() + labs(x = '', y = '') + 
+  theme(strip.background = element_blank(), strip.text = element_text(size = 12)) + theme(legend.position="none") + 
+  theme(plot.margin = unit(c(0, 5, 0, 20), "points")) + 
+  theme(axis.title.x = ggtext::element_markdown()) + geom_text(data = df_fat1, aes(x=clock, y=3.2, label = B_CI), size = 2.8) + 
+  scale_y_continuous(limits = c(-2, 4), breaks = c(-2, -1, 0, 1, 2), minor_breaks = c(-2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2)) + 
+  facet_grid(cols = vars(nutrient), scales = 'free') + theme(panel.border = element_blank()) + 
+  theme(panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank(), axis.ticks = element_blank()) +
+  scale_color_manual(values = c('gray20', '#C74632'))
+
+# DNAmTL
+df_fat2 = fat_res_alcSmkAct[fat_res_alcSmkAct$group == 2 & (fat_res_alcSmkAct$nutrient %in% c('Total fat', 'Saturated fat', 'Monounsaturated fat', 'Polyunsaturated fat')),]
+df_fat2$B_CI[1] = '0.00 (-0.02, 0.03)'
+df_fat2$B_CI[2] = '0.00 (-0.02, 0.02)'
+df_fat2$B_CI[4] = '0.00 (-0.01, 0.02)'
+f_fat2 = ggplot(data=df_fat2, aes(x=clock, y=coef, ymin=CI_L, ymax=CI_H)) +
+  geom_point(aes(color = factor(color)), size=1.5) + geom_errorbar(aes(color = factor(color)), size = 0.3, width = 0.3) +
+  geom_hline(yintercept=0, lty=2, linewidth = 0.3) + coord_flip() +
+  theme_bw() + labs(x = '', y = '') + 
+  theme(strip.background = element_blank(), strip.text = element_blank()) + theme(legend.position="none") + 
+  theme(plot.margin = unit(c(0, 5.5, 0, 27), "points")) + 
+  theme(axis.title.x = ggtext::element_markdown()) + geom_text(data = df_fat2, aes(x=clock, y=0.065, label = B_CI), size = 2.8) + 
+  scale_y_continuous(limits = c(-0.04, 0.08), breaks = c(-0.04, -0.02, 0, 0.02, 0.04), minor_breaks = c(-0.04, -0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03, 0.04)) + 
+  facet_grid(cols = vars(nutrient), scales = 'free') + theme(panel.border = element_blank()) + 
+  theme(panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank(), axis.ticks = element_blank()) +
+  scale_color_manual(values = c('gray20', '#C74632'))
+
+# epiTOC
+df_fat3 = fat_res_alcSmkAct[fat_res_alcSmkAct$group == 3 & (fat_res_alcSmkAct$nutrient %in% c('Total fat', 'Saturated fat', 'Monounsaturated fat', 'Polyunsaturated fat')),]
+f_fat3 = ggplot(data=df_fat3, aes(x=clock, y=coef, ymin=CI_L, ymax=CI_H)) +
+  geom_rect(ymin = -0.25, ymax = 0.25, xmin = 0.5, xmax = 1.5, fill = 'lightgray', alpha = 0.55) +
+  geom_point(aes(color = factor(color)), size=1.5) + geom_errorbar(aes(color = factor(color)), size = 0.3, width = 0.3) +
+  geom_hline(yintercept=0, lty=2, linewidth = 0.3) + coord_flip() +
+  theme_bw() + labs(x = '', y = '') + 
+  theme(strip.background = element_blank(), strip.text = element_blank()) + theme(legend.position="none") + 
+  theme(plot.margin = unit(c(0, 5.5, 0, 34), "points")) + 
+  theme(axis.title.x = ggtext::element_markdown()) + geom_text(data = df_fat3, aes(x=clock, y=0.4, label = B_CI), size = 2.8) + 
+  scale_y_continuous(limits = c(-0.25, 0.5), breaks = c(-0.2, -0.1, 0, 0.1, 0.2), minor_breaks = c(-0.25, -0.2, -0.15, 0.1, 0.05, 0, 0.05, 0.1, 0.15, 0.2, 0.25)) + 
+  facet_grid(cols = vars(nutrient), scales = 'free') + theme(panel.border = element_blank()) + 
+  theme(panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank(), axis.ticks = element_blank()) +
+  scale_color_manual(values = c('gray20', '#C74632'))
+
+# DunedinPoAm
+df_fat4 = fat_res_alcSmkAct[fat_res_alcSmkAct$group == 4 & (fat_res_alcSmkAct$nutrient %in% c('Total fat', 'Saturated fat', 'Monounsaturated fat', 'Polyunsaturated fat')),]
+df_fat4$B_CI[4] = '0.00 (-0.08, 0.09)'
+f_fat4 = ggplot(data=df_fat4, aes(x=clock, y=coef, ymin=CI_L, ymax=CI_H)) +
+#  geom_rect(data = rects, aes(ymin = -2, ymax = 1.5, xmin = xstart, xmax = xend, fill = col)) +
+  geom_point(aes(color = factor(color)), size=1.5) + geom_errorbar(aes(color = factor(color)), size = 0.3, width = 0.3) +
+  geom_hline(yintercept=0, lty=2, linewidth = 0.3) + coord_flip() +
+  theme_bw() + labs(x = '', y = '') + 
+  theme(strip.background = element_blank(), strip.text = element_blank()) + theme(legend.position="none") + 
+  theme(plot.margin = unit(c(0, 5.5, 0, 6), "points")) + 
+  theme(axis.title.x = ggtext::element_markdown()) + geom_text(data = df_fat4, aes(x=clock, y=0.4, label = B_CI), size = 2.8) + 
+  scale_y_continuous(limits = c(-0.25, 0.49), breaks = c(-0.2, -0.1, 0, 0.1, 0.2), minor_breaks = c(-0.25, -0.2, -0.15, 0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2, 0.25)) + 
+  facet_grid(cols = vars(nutrient), scales = 'free') + theme(panel.border = element_blank()) + 
+  theme(panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank(), axis.ticks = element_blank()) +
+  scale_color_manual(values = c('gray20', '#C74632'))
+
+blank = ggplot() + theme_void()
+
+grid.arrange(f_fat1, blank, f_fat2, blank, f_fat3, blank, f_fat4, heights = c(1.3, 0.1, 0.3, 0.1, 0.3, 0.1, 0.3))
+quartz.save('fp_fats.png', dpi = 300, bg = 'white')
+
+
+# plotting omega-6 and omega-3
+df_omega1 = fat_res_alcSmkAct[fat_res_alcSmkAct$group == 1 & (fat_res_alcSmkAct$nutrient %in% c('Omega-6', 'Omega-3')),]
+
+# correct labels
+df_omega1$B_CI[1] = '-0.63 (-1.10, -0.16)'
+df_omega1$B_CI[3] = '-0.67 (-1.20, -0.14)'
+df_omega1$B_CI[5] = '-0.07 (-0.20, 0.06)'
+df_omega1$B_CI[8] = '-0.19 (-0.60, 0.21)'
+df_omega1$B_CI[11] = '-0.57 (-1.10, -0.03)'
+df_omega1$B_CI[16] = '-0.07 (-0.45, 0.30)'
+
+# first- and second-generation clocks
+f_omega1 = ggplot(data=df_omega1, aes(x=clock, y=coef, ymin=CI_L, ymax=CI_H)) +
+   geom_rect(ymin = -2, ymax = 2, xmin = 0.5, xmax = 1.5, fill = 'lightgray', alpha = 0.1) +
+   geom_rect(ymin = -2, ymax = 2, xmin = 2.5, xmax = 3.5, fill = 'lightgray', alpha = 0.1) +
+   geom_rect(ymin = -2, ymax = 2, xmin = 4.5, xmax = 5.5, fill = 'lightgray', alpha = 0.1) +
+   geom_rect(ymin = -2, ymax = 2, xmin = 6.5, xmax = 7.5, fill = 'lightgray', alpha = 0.1) +
+  geom_point(aes(color = factor(color)), size=1.5) + geom_errorbar(aes(color = factor(color)), size = 0.3, width = 0.3) +
+  geom_hline(yintercept=0, lty=2, linewidth = 0.3) + coord_flip() +
+  theme_bw() + labs(x = '', y = '') + 
+  theme(strip.background = element_blank(), strip.text = element_text(size = 12)) + theme(legend.position="none") + 
+  theme(plot.margin = unit(c(0, 5, 0, 20), "points")) + 
+  geom_text(data = df_omega1, aes(x=clock, y=3.2, label = B_CI), size = 2.8) + 
+  scale_y_continuous(limits = c(-2, 4), breaks = c(-2, -1, 0, 1, 2), minor_breaks = c(-2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2)) + 
+  facet_grid(cols = vars(nutrient), scales = 'free') + theme(panel.border = element_blank()) + 
+  theme(panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank(), axis.ticks = element_blank()) +
+  scale_color_manual(values = c('gray20', '#C74632'))
+
+# DNAmTL
+df_omega2 = fat_res_alcSmkAct[fat_res_alcSmkAct$group == 2 & (fat_res_alcSmkAct$nutrient %in% c('Omega-6', 'Omega-3')),]
+df_omega2$B_CI[1] = '0.01 (0.00, 0.03)'
+df_omega2$B_CI[2] = '0.00 (-0.02, 0.02)'
+f_omega2 = ggplot(data=df_omega2, aes(x=clock, y=coef, ymin=CI_L, ymax=CI_H)) +
+  geom_point(aes(color = factor(color)), size=1.5) + geom_errorbar(aes(color = factor(color)), size = 0.3, width = 0.3) +
+  geom_hline(yintercept=0, lty=2, linewidth = 0.3) + coord_flip() +
+  theme_bw() + labs(x = '', y = '') + 
+  theme(strip.background = element_blank(), strip.text = element_blank()) + theme(legend.position="none") + 
+  theme(plot.margin = unit(c(0, 5.5, 0, 27), "points")) + 
+  theme(axis.title.x = ggtext::element_markdown()) + geom_text(data = df_omega2, aes(x=clock, y=0.065, label = B_CI), size = 2.8) + 
+  scale_y_continuous(limits = c(-0.04, 0.08), breaks = c(-0.04, -0.02, 0, 0.02, 0.04), minor_breaks = c(-0.04, -0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03, 0.04)) + 
+  facet_grid(cols = vars(nutrient), scales = 'free') + theme(panel.border = element_blank()) + 
+  theme(panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank(), axis.ticks = element_blank()) +
+  scale_color_manual(values = c('gray20', '#C74632'))
+
+# epiTOC
+df_omega3 = fat_res_alcSmkAct[fat_res_alcSmkAct$group == 3 & (fat_res_alcSmkAct$nutrient %in% c('Omega-6', 'Omega-3')),]
+f_omega3 = ggplot(data=df_omega3, aes(x=clock, y=coef, ymin=CI_L, ymax=CI_H)) +
+  geom_rect(ymin = -0.25, ymax = 0.25, xmin = 0.5, xmax = 1.5, fill = 'lightgray', alpha = 0.55) +
+  geom_point(aes(color = factor(color)), size=1.5) + geom_errorbar(aes(color = factor(color)), size = 0.3, width = 0.3) +
+  geom_hline(yintercept=0, lty=2, linewidth = 0.3) + coord_flip() +
+  theme_bw() + labs(x = '', y = '') + 
+  theme(strip.background = element_blank(), strip.text = element_blank()) + theme(legend.position="none") + 
+  theme(plot.margin = unit(c(0, 5.5, 0, 34), "points")) + 
+  theme(axis.title.x = ggtext::element_markdown()) + geom_text(data = df_omega3, aes(x=clock, y=0.4, label = B_CI), size = 2.8) + 
+  scale_y_continuous(limits = c(-0.25, 0.5), breaks = c(-0.2, -0.1, 0, 0.1, 0.2), minor_breaks = c(-0.25, -0.2, -0.15, 0.1, 0.05, 0, 0.05, 0.1, 0.15, 0.2, 0.25)) + 
+  facet_grid(cols = vars(nutrient), scales = 'free') + theme(panel.border = element_blank()) + 
+  theme(panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank(), axis.ticks = element_blank()) +
+  scale_color_manual(values = c('gray20', '#C74632'))
+
+# DunedinPoAm
+df_omega4 = fat_res_alcSmkAct[fat_res_alcSmkAct$group == 4 & (fat_res_alcSmkAct$nutrient %in% c('Omega-6', 'Omega-3')),]
+df_omega4$B_CI[1] = '0.01 (-0.08, 0.10)'
+df_omega4$B_CI[2] = '0.00 (-0.09, 0.09)'
+f_omega4 = ggplot(data=df_omega4, aes(x=clock, y=coef, ymin=CI_L, ymax=CI_H)) +
+#  geom_rect(data = rects, aes(ymin = -2, ymax = 1.5, xmin = xstart, xmax = xend, fill = col)) +
+  geom_point(aes(color = factor(color)), size=1.5) + geom_errorbar(aes(color = factor(color)), size = 0.3, width = 0.3) +
+  geom_hline(yintercept=0, lty=2, linewidth = 0.3) + coord_flip() +
+  theme_bw() + labs(x = '', y = '') + 
+  theme(strip.background = element_blank(), strip.text = element_blank()) + theme(legend.position="none") + 
+  theme(plot.margin = unit(c(0, 5.5, 0, 6), "points")) + 
+  theme(axis.title.x = ggtext::element_markdown()) + geom_text(data = df_omega4, aes(x=clock, y=0.4, label = B_CI), size = 2.8) + 
+  scale_y_continuous(limits = c(-0.25, 0.49), breaks = c(-0.2, -0.1, 0, 0.1, 0.2), minor_breaks = c(-0.25, -0.2, -0.15, 0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2, 0.25)) + 
+  facet_grid(cols = vars(nutrient), scales = 'free') + theme(panel.border = element_blank()) + 
+  theme(panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank(), axis.ticks = element_blank()) +
+  scale_color_manual(values = c('gray20', '#C74632'))
+
+# plotting P:S ratio
+df_ps1 = fat_res_alcSmkAct[fat_res_alcSmkAct$group == 1 & (fat_res_alcSmkAct$nutrient == 'P:S ratio'),]
+
+# correct labels
+df_ps1$B_CI[6] = '-0.80 (-1.56, -0.04)'
+
+# first- and second-generation clocks
+f_ps1 = ggplot(data=df_ps1, aes(x=clock, y=coef, ymin=CI_L, ymax=CI_H)) +
+   geom_rect(ymin = -2, ymax = 2, xmin = 0.5, xmax = 1.5, fill = 'lightgray', alpha = 0.1) +
+   geom_rect(ymin = -2, ymax = 2, xmin = 2.5, xmax = 3.5, fill = 'lightgray', alpha = 0.1) +
+   geom_rect(ymin = -2, ymax = 2, xmin = 4.5, xmax = 5.5, fill = 'lightgray', alpha = 0.1) +
+   geom_rect(ymin = -2, ymax = 2, xmin = 6.5, xmax = 7.5, fill = 'lightgray', alpha = 0.1) +
+  geom_point(aes(color = factor(color)), size=1.5) + geom_errorbar(aes(color = factor(color)), size = 0.3, width = 0.3) +
+  geom_hline(yintercept=0, lty=2, linewidth = 0.3) + coord_flip() +
+  theme_bw() + labs(x = '', y = '') + 
+  theme(strip.background = element_blank(), strip.text = element_text(size = 12)) + theme(legend.position="none") + 
+  theme(plot.margin = unit(c(0, 5, 0, 20), "points")) + 
+  geom_text(data = df_ps1, aes(x=clock, y=3.2, label = B_CI), size = 2.8) + 
+  scale_y_continuous(limits = c(-2, 4), breaks = c(-2, -1, 0, 1, 2), minor_breaks = c(-2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2)) + 
+  facet_grid(cols = vars(nutrient), scales = 'free') + theme(panel.border = element_blank()) + 
+  theme(panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank(), axis.ticks = element_blank()) +
+  scale_color_manual(values = c('gray20', '#C74632'))
+
+# DNAmTL
+df_ps2 = fat_res_alcSmkAct[fat_res_alcSmkAct$group == 2 & (fat_res_alcSmkAct$nutrient == 'P:S ratio'),]
+df_ps2$B_CI[1] = '0.00 (-0.02, 0.03)'
+f_ps2 = ggplot(data=df_ps2, aes(x=clock, y=coef, ymin=CI_L, ymax=CI_H)) +
+  geom_point(aes(color = factor(color)), size=1.5) + geom_errorbar(aes(color = factor(color)), size = 0.3, width = 0.3) +
+  geom_hline(yintercept=0, lty=2, linewidth = 0.3) + coord_flip() +
+  theme_bw() + labs(x = '', y = '') + 
+  theme(strip.background = element_blank(), strip.text = element_blank()) + theme(legend.position="none") + 
+  theme(plot.margin = unit(c(0, 5.5, 0, 27), "points")) + 
+  theme(axis.title.x = ggtext::element_markdown()) + geom_text(data = df_ps2, aes(x=clock, y=0.065, label = B_CI), size = 2.8) + 
+  scale_y_continuous(limits = c(-0.04, 0.08), breaks = c(-0.04, -0.02, 0, 0.02, 0.04), minor_breaks = c(-0.04, -0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03, 0.04)) + 
+  facet_grid(cols = vars(nutrient), scales = 'free') + theme(panel.border = element_blank()) + 
+  theme(panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank(), axis.ticks = element_blank()) +
+  scale_color_manual(values = c('gray20', '#C74632'))
+
+# epiTOC
+df_ps3 = fat_res_alcSmkAct[fat_res_alcSmkAct$group == 3 & (fat_res_alcSmkAct$nutrient == 'P:S ratio'),]
+f_ps3 = ggplot(data=df_ps3, aes(x=clock, y=coef, ymin=CI_L, ymax=CI_H)) +
+  geom_rect(ymin = -0.25, ymax = 0.25, xmin = 0.5, xmax = 1.5, fill = 'lightgray', alpha = 0.55) +
+  geom_point(aes(color = factor(color)), size=1.5) + geom_errorbar(aes(color = factor(color)), size = 0.3, width = 0.3) +
+  geom_hline(yintercept=0, lty=2, linewidth = 0.3) + coord_flip() +
+  theme_bw() + labs(x = '', y = '') + 
+  theme(strip.background = element_blank(), strip.text = element_blank()) + theme(legend.position="none") + 
+  theme(plot.margin = unit(c(0, 5.5, 0, 34), "points")) + 
+  theme(axis.title.x = ggtext::element_markdown()) + geom_text(data = df_ps3, aes(x=clock, y=0.4, label = B_CI), size = 2.8) + 
+  scale_y_continuous(limits = c(-0.25, 0.5), breaks = c(-0.2, -0.1, 0, 0.1, 0.2), minor_breaks = c(-0.25, -0.2, -0.15, 0.1, 0.05, 0, 0.05, 0.1, 0.15, 0.2, 0.25)) + 
+  facet_grid(cols = vars(nutrient), scales = 'free') + theme(panel.border = element_blank()) + 
+  theme(panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank(), axis.ticks = element_blank()) +
+  scale_color_manual(values = c('gray20', '#C74632'))
+
+# DunedinPoAm
+df_ps4 = fat_res_alcSmkAct[fat_res_alcSmkAct$group == 4 & (fat_res_alcSmkAct$nutrient == 'P:S ratio'),]
+f_ps4 = ggplot(data=df_ps4, aes(x=clock, y=coef, ymin=CI_L, ymax=CI_H)) +
+  geom_point(aes(color = factor(color)), size=1.5) + geom_errorbar(aes(color = factor(color)), size = 0.3, width = 0.3) +
+  geom_hline(yintercept=0, lty=2, linewidth = 0.3) + coord_flip() +
+  theme_bw() + labs(x = '', y = '') + 
+  theme(strip.background = element_blank(), strip.text = element_blank()) + theme(legend.position="none") + 
+  theme(plot.margin = unit(c(0, 5.5, 0, 6), "points")) + 
+  theme(axis.title.x = ggtext::element_markdown()) + geom_text(data = df_ps4, aes(x=clock, y=0.4, label = B_CI), size = 2.8) + 
+  scale_y_continuous(limits = c(-0.25, 0.49), breaks = c(-0.2, -0.1, 0, 0.1, 0.2), minor_breaks = c(-0.25, -0.2, -0.15, 0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2, 0.25)) + 
+  facet_grid(cols = vars(nutrient), scales = 'free') + theme(panel.border = element_blank()) + 
+  theme(panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank(), axis.ticks = element_blank()) +
+  scale_color_manual(values = c('gray20', '#C74632'))
+
+# combining plots
+g1 = grid.arrange(f_omega1, blank, f_omega2, blank, f_omega3, blank, f_omega4, heights = c(1.3, 0.1, 0.3, 0.1, 0.3, 0.1, 0.3))
+
+g2 = grid.arrange(f_ps1 + theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) + theme(plot.margin = unit(c(0, 5.5, 0, 20), "points")), blank, 
+        f_ps2 + theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) + theme(plot.margin = unit(c(0, 5.5, 0, 20), "points")), blank, 
+        f_ps3 + theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) + theme(plot.margin = unit(c(0, 5.5, 0, 20), "points")), blank, 
+        f_ps4 + theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) + theme(plot.margin = unit(c(0, 5.5, 0, 20), "points")), heights = c(1.2, 0.1, 0.3, 0.1, 0.3, 0.1, 0.3))
+
+grid.arrange(g1, g2, ncol = 2, widths = c(2, 1))
+quartz.save('fp_omegas_psRatio.png', dpi = 300, bg = 'white')
+```
+
+
+```{r, out.width = '100%', echo = FALSE}
+knitr::include_graphics("fp_fats.png")
+```
+
+
+```{r, out.width = '100%', echo = FALSE}
+knitr::include_graphics("fp_omegas_psRatio.png")
+```
+
+
+## Fatty acid subtypes: Figure 3
+```{r, eval = F}
+# load results
+type_B = read.csv('subtypes_B.csv')[,-1]
+type_p = read.csv('subtypes_p.csv')[,-1]
+
+# reformat dataframes
+B_long_clocks = type_B
+rownames(B_long_clocks) = c('SFA 4:0', 'SFA 6:0', 'SFA 8:0', 'SFA 10:0', 'SFA 12:0', 'SFA 14:0', 'SFA 16:0', 'SFA 18:0',
+                            'MUFA 16:1', 'MUFA 18:1', 'MUFA 20:1', 'MUFA 22:1',
+                            'PUFA 18:2', 'PUFA 20:4', 'PUFA 18:3', 'PUFA 20:5', 'PUFA 22:5', 'PUFA 22:6')
+colnames(B_long_clocks) = c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'Vidal-Bralo', 'PhenoAge', 'GrimAge2', 'DNAmTL', 'epiTOC', 'DunedinPoAm')
+B_long_clocks$type = rownames(B_long_clocks)
+B_long_clocks = B_long_clocks %>% pivot_longer(cols = 'Horvath1':'DunedinPoAm', names_to = 'clock', values_to = 'value')
+B_long_clocks = data.frame(B_long_clocks)
+
+p_long_clocks = type_p
+p_long_clocks$type = rownames(p_long_clocks)
+p_long_clocks = p_long_clocks %>% pivot_longer(cols = 'HorvathAge':'DunedinPoAm', names_to = 'clock', values_to = 'value')
+p_long_clocks = data.frame(p_long_clocks)
+
+B_long_clocks$type = factor(B_long_clocks$type, levels = c('SFA 4:0', 'SFA 6:0', 'SFA 8:0', 'SFA 10:0', 'SFA 12:0', 'SFA 14:0', 'SFA 16:0', 'SFA 18:0',
+                            'MUFA 16:1', 'MUFA 18:1', 'MUFA 20:1', 'MUFA 22:1',
+                            'PUFA 18:2', 'PUFA 20:4', 'PUFA 18:3', 'PUFA 20:5', 'PUFA 22:5', 'PUFA 22:6'))
+B_long_clocks$type = fct_rev(B_long_clocks$type)
+B_long_clocks$clock = factor(B_long_clocks$clock, levels = c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'Vidal-Bralo', 'PhenoAge', 'GrimAge2', 'DNAmTL', 'epiTOC', 'DunedinPoAm'))
+B_long_clocks$group = rep(c(1,1,1,1,1,1,1,1,2,3,4), times = 18)
+
+B_long_clocks$p = p_long_clocks$value
+B_long_clocks$anno = ifelse(B_long_clocks$p < 0.01, '**',
+    ifelse(B_long_clocks$p < 0.05, '*', 
+    NA))
+
+# first- and second-generation clocks
+p1 = ggplot(B_long_clocks[B_long_clocks$group == 1,], aes(clock, type, label = anno)) + geom_raster(aes(fill = value)) + scale_fill_gradient2(low = "#007C92", mid = "white", high = "#C74632", limits = c(-0.11, 0.11)) +
+    scale_x_discrete(guide = guide_axis(angle = 45)) + theme_minimal() + geom_text() +
+    labs(x = '', y = '') + 
+    theme(legend.title=element_blank()) + theme(plot.margin = unit(c(5.5, 5.5, 55, 5.5), "points")) + 
+    theme(legend.direction = "horizontal", legend.position = c(0.8, -0.15), legend.text=element_text(size=7)) + 
+    theme(axis.text.y = element_markdown()) +
+    guides(fill = guide_colorbar(barwidth = 6.5)) +
+    geom_rect(mapping = aes(xmin = 0.5, xmax = 8.5, ymin = 0.5, ymax = 6.5), alpha = 0, color = 'black', size = 0.1) +
+    geom_rect(mapping = aes(xmin = 0.5, xmax = 8.5, ymin = 6.5, ymax = 10.5), alpha = 0, color = 'black', size = 0.1) +
+    geom_rect(mapping = aes(xmin = 0.5, xmax = 8.5, ymin = 10.5, ymax = 18.5), alpha = 0, color = 'black', size = 0.1) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+# TNAmTL
+p2 = ggplot(B_long_clocks[B_long_clocks$group == 2,], aes(clock, type, label = anno)) + geom_raster(aes(fill = value)) + scale_fill_gradient2(low = "#007C92", mid = "white", high = "#C74632", limits = c(-0.11, 0.11)) +
+    scale_x_discrete(guide = guide_axis(angle = 45)) + theme_minimal() + geom_text() +
+    labs(x = '', y = '') + theme(plot.margin = unit(c(5.5, 5.5, 60, 5.5), "points")) + 
+    theme(legend.position = 'none') + 
+    theme(axis.text.y = element_blank()) +
+    geom_rect(mapping = aes(xmin = 0.5, xmax = 1.5, ymin = 0.5, ymax = 6.5), alpha = 0, color = 'black', size = 0.1) +
+    geom_rect(mapping = aes(xmin = 0.5, xmax = 1.5, ymin = 6.5, ymax = 10.5), alpha = 0, color = 'black', size = 0.1) +
+    geom_rect(mapping = aes(xmin = 0.5, xmax = 1.5, ymin = 10.5, ymax = 18.5), alpha = 0, color = 'black', size = 0.1) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+# epiTOC
+p3 = ggplot(B_long_clocks[B_long_clocks$group == 3,], aes(clock, type, label = anno)) + geom_raster(aes(fill = value)) + scale_fill_gradient2(low = "#007C92", mid = "white", high = "#C74632", limits = c(-0.11, 0.11)) +
+    scale_x_discrete(guide = guide_axis(angle = 45)) + theme_minimal() + geom_text() +
+    labs(x = '', y = '') + theme(plot.margin = unit(c(5.5, 5.5, 64, 5.5), "points")) + 
+    theme(legend.position = 'none') +  
+    theme(axis.text.y = element_blank()) +
+    geom_rect(mapping = aes(xmin = 0.5, xmax = 1.5, ymin = 0.5, ymax = 6.5), alpha = 0, color = 'black', size = 0.1) +
+    geom_rect(mapping = aes(xmin = 0.5, xmax = 1.5, ymin = 6.5, ymax = 10.5), alpha = 0, color = 'black', size = 0.1) +
+    geom_rect(mapping = aes(xmin = 0.5, xmax = 1.5, ymin = 10.5, ymax = 18.5), alpha = 0, color = 'black', size = 0.1) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+# DunedinPoAm
+p4 = ggplot(B_long_clocks[B_long_clocks$group == 4,], aes(clock, type, label = anno)) + geom_raster(aes(fill = value)) + scale_fill_gradient2(low = "#007C92", mid = "white", high = "#C74632", limits = c(-0.11, 0.11)) +
+    scale_x_discrete(guide = guide_axis(angle = 45)) + theme_minimal() + geom_text() +
+    labs(x = '', y = '') + theme(plot.margin = unit(c(5.5, 5.5, 46, 5.5), "points")) + 
+    theme(legend.position = 'none') + 
+    theme(axis.text.y = element_blank()) +
+    geom_rect(mapping = aes(xmin = 0.5, xmax = 1.5, ymin = 0.5, ymax = 6.5), alpha = 0, color = 'black', size = 0.1) +
+    geom_rect(mapping = aes(xmin = 0.5, xmax = 1.5, ymin = 6.5, ymax = 10.5), alpha = 0, color = 'black', size = 0.1) +
+    geom_rect(mapping = aes(xmin = 0.5, xmax = 1.5, ymin = 10.5, ymax = 18.5), alpha = 0, color = 'black', size = 0.1) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+grid.arrange(p1, p2, p3, p4, nrow = 1, widths = c(1.5, 0.3, 0.3, 0.3))
+quartz.save('heatmap_types.png', dpi = 300, bg = 'white')
+```
+
+```{r, out.width = '100%', echo = FALSE}
+knitr::include_graphics("heatmap_types.png")
+```

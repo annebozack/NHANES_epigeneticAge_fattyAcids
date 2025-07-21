@@ -1,0 +1,583 @@
+---
+title: "NHANES EAA and fatty acid intake: Analyses"
+author: "Anne Bozack"
+output: 
+    html_document:
+        code_folding: 
+        toc: true
+        toc_float: true
+---
+
+
+## Libraries
+```{r, eval = F}
+library(tidyverse)
+library(survey) 
+library(forcats)
+library(jtools)
+library(dplyr)
+library(mice)
+library(mitools)
+library(svydiags)
+library(kableExtra)
+```
+
+## Survey design
+```{r, eval = F}
+load("nhanes_fattyAcids_clean_data.RData")
+
+# specify survey design
+nhanesDesign <- svydesign(id = ~SDMVPSU,  # Primary Sampling Units (PSU)
+                 strata  = ~SDMVSTRA, # Stratification used in the survey
+                 weights = ~WTDN4YR,   # Survey weights (using those from DNAm dataset, may need to update)
+                 nest    = TRUE,      # Whether PSUs are nested within strata
+                 data    = df)       # specify dataset
+dim(nhanesDesign)
+# 2532  288
+
+# subset survey design
+nhanesDesign_use <- subset(nhanesDesign, use_fat)
+dim(nhanesDesign_use)
+# 2220  288
+
+nhanesDesign_use_covar <- subset(nhanesDesign, use_fat_covar)
+dim(nhanesDesign_use_covar)
+# 1771  288
+```
+
+### Primary model - linear associations adjusted for age, age^2, gender, race/ethnicity, BMI, education, occupation, PIR, alcohol, smoking, and physical activity
+```{r, eval = F}
+# dataframe to store results
+fat_res_alcSmkAct = data.frame(nutrient = rep(c('Total fat', 'Saturated fat', 'Monounsaturated fat', 'Polyunsaturated fat', 'P:S ratio', 'Omega-3', 'Omega-6'), each = 11),
+  clock = rep(c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'VidalBralo', 'PhenoAge', 'GrimAge2', 
+        'DNAmTL', 'YangCell', 'DunedinPoAm'), times = 7),
+  coef = NA, p = NA, CI_L = NA, CI_H = NA, n = NA)
+
+# NHANES variable names
+vars_fat = c('DRXTTFAT_log2', 'DRXTSFAT_log2', 'DRXTMFAT_log2', 'DRXTPFAT_log2', 'psatfatRatio', 'omega3_log2', 'omega6_log2')
+vars_ead = c('HorvathAge', 'SkinBloodAge', 'HannumAge', 'LinAge', 'ZhangAge', 'VidalBraloAge', 'PhenoAge', 'GrimAge2Mort', 'HorvathTelo', 'YangCell_scale', 'DunedinPoAm_scale')
+
+# functions to fill in table
+popTable1 = function(tab, i, j, k){
+    # i = EAD variable
+    # j = fat variable
+    # k = table row
+    mod = svyglm(formula(paste0(vars_ead[i], " ~ ", vars_fat[j], " +
+        RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+        BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+        factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+        design = nhanesDesign_use, 
+        family = gaussian())
+    tab[k,3] = summary(mod)$coef[2,1]
+    tab[k,4] = summary(mod)$coef[2,4]
+    tab[k,5] = confint(mod)[2,1]
+    tab[k,6] = confint(mod)[2,2]
+    tab[k,7] = nrow(mod$model)
+    return(tab)
+}
+
+popTable2 = function(tab, vars_fat, vars_ead){
+    k = 1
+    for (j in 1:length(vars_fat)){
+        for (i in 1:length(vars_ead)){
+            tab = popTable1(tab, i, j, k)
+            k = k + 1
+        }
+    }
+    return(tab)
+}
+
+fat_res_alcSmkAct = popTable2(fat_res_alcSmkAct, vars_fat, vars_ead)
+
+fat_res_alcSmkAct$B_CI = paste0(round(fat_res_alcSmkAct$coef, 2), ' ', fat_res_alcSmkAct$CI)
+
+write.csv(fat_res_alcSmkAct, 'fat_res_alcSmkAct.csv')
+```
+
+```{r, warning=FALSE, message=FALSE, echo = F}
+kable(fat_res_alcSmkAct) %>% kable_classic()
+```
+
+
+
+#### Omega-3 and omega-6 jointly adjusted model
+```{r, eval = F}
+# dataframe to store results
+fat_res_alcSmkAct_omegas = data.frame(nutrient = rep(c('Omega-3', 'Omega-6'), each = 11),
+  clock = rep(c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'VidalBralo', 'PhenoAge', 'GrimAge2', 
+        'DNAmTL', 'YangCell', 'DunedinPoAm'), times = 2),
+  coef = NA, p = NA, CI_L = NA, CI_H = NA, n = NA, se = NA)
+
+# NHANES variable names
+vars_ead = c('HorvathAge', 'SkinBloodAge', 'HannumAge', 'LinAge', 'ZhangAge', 'VidalBraloAge', 'PhenoAge', 'GrimAge2Mort', 'HorvathTelo', 'YangCell_scale', 'DunedinPoAm_scale')
+
+# functions to fill in table
+popTable_omegas = function(tab, vars_ead){
+    for (i in 1:length(vars_ead)){
+        mod = svyglm(formula(paste0(vars_ead[i], " ~ omega3_log2 + omega6_log2 +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+        tab[i,3] = summary(mod)$coef[2,1]
+        tab[i,4] = summary(mod)$coef[2,4]
+        tab[i,5] = confint(mod)[2,1]
+        tab[i,6] = confint(mod)[2,2]
+        tab[i,7] = nrow(mod$model)
+        tab[i,8] = summary(mod)$coef[2,2]
+        tab[i+11,3] = summary(mod)$coef[3,1]
+        tab[i+11,4] = summary(mod)$coef[3,4]
+        tab[i+11,5] = confint(mod)[3,1]
+        tab[i+11,6] = confint(mod)[3,2]
+        tab[i+11,7] = nrow(mod$model)   
+        tab[i+11,8] = summary(mod)$coef[3,2]
+    }
+    return(tab)
+}
+
+fat_res_alcSmkAct_omegas = popTable_omegas(fat_res_alcSmkAct_omegas, vars_ead)
+
+fat_res_alcSmkAct_omegas$B_CI = paste0(round(fat_res_alcSmkAct_omegas$coef, 2), ' ', fat_res_alcSmkAct_omegas$CI)
+
+write.csv(fat_res_alcSmkAct_omegas, 'fat_res_alcSmkAct_omegas.csv')
+
+# calculate VIF
+X = model.matrix(formula(" ~ omega3_log2 + omega6_log2 +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR"), data = df[df$use_fat_covar,])
+
+# Horvath1
+i = 1
+mod = svyglm(formula(paste0(vars_ead[i], " ~ omega3_log2 + omega6_log2 +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+svyvif(mod, X = data.frame(X[,-1]), w = data.frame(df[df$use_fat_covar,])$WTDN4YR)
+# $`Intercept adjusted`
+#                                         svy.vif.m  reg.vif.m      zeta     varrho.m zeta.x.varrho.m      Rsq.m
+# omega3_log2                              2.967946   3.212232 1309589.2 7.055276e-07       0.9239513 0.68868994
+# omega6_log2                              3.597126   3.694117 1576102.2 6.178180e-07       0.9737444 0.72929935
+
+# Horvath2
+i = 2
+mod = svyglm(formula(paste0(vars_ead[i], " ~ omega3_log2 + omega6_log2 +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+svyvif(mod, X = data.frame(X[,-1]), w = data.frame(df[df$use_fat_covar,])$WTDN4YR)
+#                                         svy.vif.m  reg.vif.m      zeta     varrho.m zeta.x.varrho.m      Rsq.m
+# omega3_log2                              2.530812   3.212232  725017.5 1.086687e-06       0.7878674 0.68868994
+# omega6_log2                              3.167558   3.694117  996926.8 8.601034e-07       0.8574601 0.72929935
+
+# Hannum
+i = 3
+mod = svyglm(formula(paste0(vars_ead[i], " ~ omega3_log2 + omega6_log2 +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+svyvif(mod, X = data.frame(X[,-1]), w = data.frame(df[df$use_fat_covar,])$WTDN4YR)
+#                                         svy.vif.m  reg.vif.m      zeta     varrho.m zeta.x.varrho.m      Rsq.m
+# omega3_log2                              2.623826   3.212232 1136967.8 7.184226e-07       0.8168234 0.68868994
+# omega6_log2                              3.163919   3.694117 1575851.7 5.434998e-07       0.8564750 0.72929935
+
+# Lin
+i = 4
+mod = svyglm(formula(paste0(vars_ead[i], " ~ omega3_log2 + omega6_log2 +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+svyvif(mod, X = data.frame(X[,-1]), w = data.frame(df[df$use_fat_covar,])$WTDN4YR)
+#                                         svy.vif.m  reg.vif.m      zeta     varrho.m zeta.x.varrho.m      Rsq.m
+# omega3_log2                              2.976786   3.212232 2997642.8 3.091440e-07       0.9267034 0.68868994
+# omega6_log2                              3.291811   3.694117 3094102.4 2.879981e-07       0.8910955 0.72929935
+
+# Zhang
+i = 5
+mod = svyglm(formula(paste0(vars_ead[i], " ~ omega3_log2 + omega6_log2 +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+svyvif(mod, X = data.frame(X[,-1]), w = data.frame(df[df$use_fat_covar,])$WTDN4YR)
+#                                          svy.vif.m  reg.vif.m      zeta     varrho.m zeta.x.varrho.m      Rsq.m
+# omega3_log2                              2.2000084   3.212232  86930.61 7.878522e-06       0.6848847 0.68868994
+# omega6_log2                              2.8517601   3.694117 135412.20 5.700914e-06       0.7719733 0.72929935
+
+# Vidal-Bralo
+i = 6
+mod = svyglm(formula(paste0(vars_ead[i], " ~ omega3_log2 + omega6_log2 +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+svyvif(mod, X = data.frame(X[,-1]), w = data.frame(df[df$use_fat_covar,])$WTDN4YR)
+#                                         svy.vif.m  reg.vif.m      zeta     varrho.m zeta.x.varrho.m      Rsq.m
+# omega3_log2                              3.151974   3.212232 1257285.5 7.804443e-07       0.9812413 0.68868994
+# omega6_log2                              3.702299   3.694117 1360590.3 7.366028e-07       1.0022147 0.72929935
+
+# PhenoAge
+i = 7
+mod = svyglm(formula(paste0(vars_ead[i], " ~ omega3_log2 + omega6_log2 +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+svyvif(mod, X = data.frame(X[,-1]), w = data.frame(df[df$use_fat_covar,])$WTDN4YR)
+#                                         svy.vif.m  reg.vif.m      zeta     varrho.m zeta.x.varrho.m      Rsq.m
+# omega3_log2                              2.961911   3.212232 2113404.1 4.362974e-07       0.9220726 0.68868994
+# omega6_log2                              3.514716   3.694117 2519250.1 3.776663e-07       0.9514360 0.72929935
+
+# GrimAge2
+i = 8
+mod = svyglm(formula(paste0(vars_ead[i], " ~ omega3_log2 + omega6_log2 +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+svyvif(mod, X = data.frame(X[,-1]), w = data.frame(df[df$use_fat_covar,])$WTDN4YR)
+#                                         svy.vif.m  reg.vif.m      zeta     varrho.m zeta.x.varrho.m      Rsq.m
+# omega3_log2                              3.175466   3.212232  854816.1 1.156453e-06       0.9885546 0.68868994
+# omega6_log2                              3.717093   3.694117  788996.5 1.275316e-06       1.0062196 0.72929935
+
+# DNAmTL
+i = 9
+mod = svyglm(formula(paste0(vars_ead[i], " ~ omega3_log2 + omega6_log2 +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+svyvif(mod, X = data.frame(X[,-1]), w = data.frame(df[df$use_fat_covar,])$WTDN4YR)
+#                                         svy.vif.m  reg.vif.m      zeta     varrho.m zeta.x.varrho.m      Rsq.m
+# omega3_log2                              2.829337   3.212232 2170.4203 0.0004058205       0.8808010 0.68868994
+# omega6_log2                              3.487489   3.694117 2832.5737 0.0003332890       0.9440657 0.72929935
+
+# YangCell
+i = 10
+mod = svyglm(formula(paste0(vars_ead[i], " ~ omega3_log2 + omega6_log2 +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+svyvif(mod, X = data.frame(X[,-1]), w = data.frame(df[df$use_fat_covar,])$WTDN4YR)
+#                                         svy.vif.m  reg.vif.m      zeta     varrho.m zeta.x.varrho.m      Rsq.m
+# omega3_log2                              3.449913   3.212232 34265.484 3.134328e-05       1.0739926 0.68868994
+# omega6_log2                              3.497886   3.694117 33411.856 2.833964e-05       0.9468801 0.72929935
+
+# DunedinPoAm
+i = 11
+mod = svyglm(formula(paste0(vars_ead[i], " ~ omega3_log2 + omega6_log2 +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+svyvif(mod, X = data.frame(X[,-1]), w = data.frame(df[df$use_fat_covar,])$WTDN4YR)
+#                                         svy.vif.m  reg.vif.m      zeta     varrho.m zeta.x.varrho.m      Rsq.m
+# omega3_log2                              2.929468   3.212232 34781.148 2.622032e-05       0.9119727 0.68868994
+# omega6_log2                              3.428352   3.694117 35402.935 2.621413e-05       0.9280572 0.72929935
+```
+
+
+```{r, warning=FALSE, message=FALSE, echo = F}
+kable(fat_res_alcSmkAct_omegas) %>% kable_classic()
+```
+
+
+#### Associations with individual fatty acids
+```{r, eval = F}
+# dataframe to store results
+subtypes_res = data.frame(nutrient = rep(c('SFA 4:0', 'SFA 6:0', 'SFA 8:0', 'SFA 10:0', 'SFA 12:0', 'SFA 14:0', 'SFA 16:0', 'SFA 18:0',
+                            'MUFA 16:1', 'MUFA 18:1', 'MUFA 20:1', 'MUFA 22:1',
+                            'PUFA 18:2', 'PUFA 20:4', 'PUFA 18:3', 'PUFA 20:5', 'PUFA 22:5', 'PUFA 22:6'), each = 11),
+  clock = rep(c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'VidalBralo', 'PhenoAge', 'GrimAge2', 
+        'DNAmTL', 'YangCell', 'DunedinPoAm'), times = 18),
+  coef = NA, p = NA, CI_L = NA, CI_H = NA, n = NA)
+
+# NHANES variable names
+vars_ead = c("HorvathAge", "SkinBloodAge", "HannumAge", "LinAge", "ZhangAge", "VidalBraloAge", "PhenoAge", "GrimAge2Mort", "HorvathTelo", "YangCell_scale", "DunedinPoAm_scale")
+subtypes = c("DRXTS040_log2", "DRXTS060_log2", "DRXTS080_log2", "DRXTS100_log2", "DRXTS120_log2", "DRXTS140_log2", "DRXTS160_log2", "DRXTS180_log2", "DRXTM161_log2", 
+        "DRXTM181_log2", "DRXTM201_log2", "DRXTM221_log2", "DRXTP182_log2", "DRXTP204_log2", "DRXTP183_log2", "DRXTP205_log2", "DRXTP225_log2", "DRXTP226_log2")
+
+# functions to fill in table
+popTable1_subtypes = function(tab, i, j, k){
+    # i = EAD variable
+    # j = fat variable
+    # k = table row
+    mod = svyglm(formula(paste0(vars_ead[i], " ~ ", subtypes[j], " +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+    tab[k,3] = summary(mod)$coef[2,1]
+    tab[k,4] = summary(mod)$coef[2,4]
+    tab[k,5] = confint(mod)[2,1]
+    tab[k,6] = confint(mod)[2,2]
+    tab[k,7] = nrow(mod$model)
+    return(tab)
+}
+
+popTable2_subtypes = function(tab, subtypes, vars_ead){
+    k = 1
+    for (j in 1:length(subtypes)){
+        for (i in 1:length(vars_ead)){
+            tab = popTable1_subtypes(tab, i, j, k)
+            k = k + 1
+        }
+    }
+    return(tab)
+}
+
+subtypes_res = popTable2_subtypes(subtypes_res, subtypes, vars_ead)
+subtypes_res$B_CI = paste0(round(subtypes_res$coef, 2), ' (', round(subtypes_res$CI_L, 2), ', ', round(subtypes_res$CI_H, 2), ')')
+
+write.csv(subtypes_res, 'subtypes_res_noScale.csv')
+
+
+# results for plotting
+# dataframes to store results
+type_B = data.frame(matrix(nrow = 18, ncol = 11))
+rownames(type_B) = subtypes
+colnames(type_B) = c("HorvathAge", "SkinBloodAge", "HannumAge", "LinAge", "ZhangAge", "VidalBraloAge", "PhenoAge", "GrimAge2Mort", "HorvathTelo", "YangCell_scale", "DunedinPoAm")
+type_p = type_B
+
+for (i in 1:nrow(type_B)){
+    for (j in 1:ncol(type_B)){
+        coef = summary(svyglm(formula(paste0("scale(", colnames(type_B)[j], ") ~ ", rownames(type_B)[i], " +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian()))$coef
+        type_B[i,j] = coef[2,1]
+        type_p[i,j] = coef[2,4]
+    }
+}
+
+write.csv(type_B, 'subtypes_B.csv')
+write.csv(type_p, 'subtypes_p.csv')
+```
+
+```{r, warning=FALSE, message=FALSE, echo = F}
+kable(subtypes_res) %>% kable_classic()
+```
+
+
+## Sensitivity analyses with imputed covatiates
+```{r, eval = F}
+load("nhanes_fattyAcids_clean_data.RData")
+set.seed(123)
+
+df_use = df[df$use_fat,]
+
+# check that covariates are coded as numbers
+table(df_use$RIAGENDR)
+
+table(df_use$RIDRETH1)
+
+table(df_use$active_modvig)
+#   No  Yes 
+# 1197 1022
+df_use$active_modvig = ifelse(df_use$active_modvig == 'No', 0,
+                        ifelse(df_use$active_modvig == 'Yes', 1, NA))
+table(df_use$active_modvig)
+#    0    1 
+# 1197 1022 
+
+table(df_use$SMOKE_3cat)
+#   Never  Former Current 
+#     1004     863     349  
+df_use$SMOKE_3cat <- ifelse(df_use$SMOKE_3cat == "Never", 0, 
+                        ifelse(df_use$SMOKE_3cat == "Former", 1, 
+                        ifelse(df_use$SMOKE_3cat == "Current", 2, NA)))
+table(df_use$SMOKE_3cat)
+#    0    1    2 
+# 1004  863  349 
+
+table(df_use$EDUCATION)
+# High School Diploma (including GED)               Less Than High School               More Than High School 
+#                                455                                 995                                 770 
+df_use$EDUCATION <- ifelse(df_use$EDUCATION == "Less Than High School", 0, 
+                        ifelse(df_use$EDUCATION == "High School Diploma (including GED)", 1, 
+                        ifelse(df_use$EDUCATION == "More Than High School", 2, NA)))
+table(df_use$EDUCATION)     
+#    0    1    2 
+#   995 455 770  
+
+table(df_use$OCCUPATION)
+#   hiblue  hiwhite  lowblue lowwhite   nowork 
+#       301      505      857      376       55 
+df_use$OCCUPATION <- ifelse(df_use$OCCUPATION == "lowblue", 0, ifelse(df_use$OCCUPATION == "hiblue", 1, 
+                ifelse(df_use$OCCUPATION == "lowwhite", 2, ifelse(df_use$OCCUPATION == "hiwhite", 3, 
+                                                       ifelse(df_use$OCCUPATION == "nowork", 4, NA)))))
+table(df_use$OCCUPATION)
+#   0   1   2   3   4 
+# 857 301 376 505  55  
+
+df_use$RIAGENDR <- as.factor(df_use$RIAGENDR)
+df_use$RIDRETH1 <- as.factor(df_use$RIDRETH1)
+df_use$EDUCATION <- as.factor(df_use$EDUCATION)
+df_use$OCCUPATION <- as.factor(df_use$OCCUPATION)
+df_use$SMOKE_3cat <- as.factor(df_use$SMOKE_3cat)
+df_use$INDFMPIR <- as.numeric(df_use$INDFMPIR)   
+df_use$active_modvig <- as.numeric(df_use$active_modvig)
+
+# subset dataset to just covariates
+# mice will try to impute any missing value so will rejoin imputed covariates with the exposures/outcomes after
+subs <- df_use %>% 
+  dplyr::select(RIDAGEYR, RIAGENDR, RIDRETH1, BMXBMI, DRXTKCAL, active_modvig, EDUCATION, OCCUPATION, INDFMPIR, drinkvol, SMOKE_3cat)
+non_subs <- df_use %>% 
+  dplyr::select(-RIDAGEYR, -RIAGENDR, -RIDRETH1, -BMXBMI, -DRXTKCAL, -active_modvig, -EDUCATION, -OCCUPATION, -INDFMPIR, -drinkvol, -SMOKE_3cat)
+
+df_imp <- mice(subs, m = 5)              # imputation with 5 iterations 
+df_imp <- mice::cbind(df_imp, non_subs)  # rejoin exposure/outcome data
+
+# output is 5 iterations of complete datasets, each iteration can be accessed with the complete function
+table(df_use$OCCUPATION)                            # original non-imputer values
+#   0   1   2   3   4 
+# 857 301 376 505  55
+table(complete(df_imp, action = 2)$OCCUPATION)  # after imputation from the 2nd iteration
+#   0   1   2   3   4 
+# 928 310 399 524  59 
+
+
+# create imputation list compatible with survey design
+l <- list((complete(df_imp, action = 1)), (complete(df_imp, action = 2)), (complete(df_imp, action = 3)), 
+          (complete(df_imp, action = 4)), (complete(df_imp, action = 5)))
+df_imp_list <- imputationList(l) 
+
+# specify survey design
+nhanesDesign_impute <- svydesign(id = ~SDMVPSU,  # Primary Sampling Units (PSU)
+                          strata  = ~SDMVSTRA, # Stratification used in the survey
+                          weights = ~WTDN4YR,   # Survey weights (using those from DNAm dataset)
+                          nest    = TRUE,      # Whether PSUs are nested within strata
+                          data    = df_imp_list)  # only change from non-imputed version
+
+dim(nhanesDesign_impute)
+# 2220  288    5
+```
+
+
+### Associations with fatty acid intake
+```{r, eval = F}
+fat_res_alcSmkAct_imp = data.frame(nutrient = rep(c('Total fat', 'Saturated fat', 'Monounsaturated fat', 'Polyunsaturated fat', 'P:S ratio', 'Omega-3', 'Omega-6'), each = 11),
+  clock = rep(c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'VidalBralo', 'PhenoAge', 'GrimAge2', 
+        'DNAmTL', 'YangCell', 'DunedinPoAm'), times = 7),
+  coef = NA, p = NA, CI_L = NA, CI_H = NA)
+
+# NHANES variable names
+# vars_fat = c('DRXTTFAT', 'DRXTSFAT', 'DRXTMFAT', 'DRXTPFAT', 'psatfatRatio', 'psatfatRatioGt1', 'omega3', 'omega6', 'omegaRatio', 'omegaRatio5')
+vars_fat = c('DRXTTFAT_log2', 'DRXTSFAT_log2', 'DRXTMFAT_log2', 'DRXTPFAT_log2', 'psatfatRatio', 'omega3_log2', 'omega6_log2')
+vars_ead = c('HorvathAge', 'SkinBloodAge', 'HannumAge', 'LinAge', 'ZhangAge', 'VidalBraloAge', 'PhenoAge', 'GrimAge2Mort', 'HorvathTelo', 'YangCell_scale', 'DunedinPoAm_scale')
+
+
+# functions to fill in table
+popTable1 = function(tab, i, j, k){
+    # i = EAD variable
+    # j = OCM variable
+    # k = table row
+    mod <- with(nhanesDesign_impute, svyglm(formula(paste0(vars_ead[i], " ~ ", vars_fat[j], " +
+        RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+        BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+        factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+                        subset = use,
+                        design = nhanesDesign_impute, 
+                        family = gaussian()))
+    tab[k,3] = summary(pool(mod), conf.int = TRUE)[2,2]
+    tab[k,4] = summary(pool(mod), conf.int = TRUE)[2,6]
+    tab[k,5] = summary(pool(mod), conf.int = TRUE)[2,7]
+    tab[k,6] = summary(pool(mod), conf.int = TRUE)[2,8]
+    return(tab)
+}
+
+popTable2 = function(tab, vars_fat, vars_ead){
+    k = 1
+    for (j in 1:length(vars_fat)){
+        for (i in 1:length(vars_ead)){
+            tab = popTable1(tab, i, j, k)
+            k = k + 1
+        }
+    }
+    return(tab)
+}
+
+fat_res_alcSmkAct_imp = popTable2(fat_res_alcSmkAct_imp, vars_fat, vars_ead)
+
+fat_res_alcSmkAct_imp$B_CI = paste0(round(fat_res_alcSmkAct_imp$coef, 2), ' ', fat_res_alcSmkAct_imp$CI)
+
+write.csv(fat_res_alcSmkAct_imp, 'fat_res_alcSmkAct_imp.csv')
+```
+
+
+```{r, warning=FALSE, message=FALSE, echo = F}
+kable(fat_res_alcSmkAct_imp) %>% kable_classic()
+```
+
+
+#### Associations with individual fatty acids
+```{r, eval = F}
+# without scaling epigenetic age variables
+vars_ead = c("HorvathAge", "SkinBloodAge", "HannumAge", "LinAge", "ZhangAge", "VidalBraloAge", "PhenoAge", "GrimAge2Mort", "HorvathTelo", "YangCell_scale", "DunedinPoAm_scale")
+subtypes = c("DRXTS040_log2", "DRXTS060_log2", "DRXTS080_log2", "DRXTS100_log2", "DRXTS120_log2", "DRXTS140_log2", "DRXTS160_log2", "DRXTS180_log2", "DRXTM161_log2", 
+        "DRXTM181_log2", "DRXTM201_log2", "DRXTM221_log2", "DRXTP182_log2", "DRXTP204_log2", "DRXTP183_log2", "DRXTP205_log2", "DRXTP225_log2", "DRXTP226_log2")
+
+subtypes_res_imp = data.frame(nutrient = rep(c('SFA 4:0', 'SFA 6:0', 'SFA 8:0', 'SFA 10:0', 'SFA 12:0', 'SFA 14:0', 'SFA 16:0', 'SFA 18:0',
+                            'MUFA 16:1', 'MUFA 18:1', 'MUFA 20:1', 'MUFA 22:1',
+                            'PUFA 18:2', 'PUFA 20:4', 'PUFA 18:3', 'PUFA 20:5', 'PUFA 22:5', 'PUFA 22:6'), each = 11),
+  clock = rep(c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'VidalBralo', 'PhenoAge', 'GrimAge2', 
+        'DNAmTL', 'YangCell', 'DunedinPoAm'), times = 18),
+  coef = NA, p = NA, CI_L = NA, CI_H = NA)
+
+# functions to fill in table
+popTable1_subtypes_imp = function(tab, i, j, k){
+    # i = EAD variable
+    # j = fat variable
+    # k = table row
+    mod = with(nhanesDesign_impute, svyglm(formula(paste0(vars_ead[i], " ~ ", subtypes[j], " +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIAGENDR) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian()))
+    tab[k,3] = summary(pool(mod), conf.int = TRUE)[2,2]
+    tab[k,4] = summary(pool(mod), conf.int = TRUE)[2,6]
+    tab[k,5] = summary(pool(mod), conf.int = TRUE)[2,7]
+    tab[k,6] = summary(pool(mod), conf.int = TRUE)[2,8]
+    return(tab)
+}
+
+popTable2_subtypes_imp = function(tab, subtypes, vars_ead){
+    k = 1
+    for (j in 1:length(subtypes)){
+        for (i in 1:length(vars_ead)){
+            tab = popTable1_subtypes_imp(tab, i, j, k)
+            k = k + 1
+        }
+    }
+    return(tab)
+}
+
+subtypes_res_imp = popTable2_subtypes_imp(subtypes_res_imp, subtypes, vars_ead)
+subtypes_res_imp$B_CI = paste0(round(subtypes_res_imp$coef, 2), ' (', round(subtypes_res_imp$CI_L, 2), ', ', round(subtypes_res_imp$CI_H, 2), ')')
+write.csv(subtypes_res_imp, 'subtypes_res_noScale_imp.csv')
+```
+
+```{r, warning=FALSE, message=FALSE, echo = F}
+kable(subtypes_res_imp) %>% kable_classic()
+```
