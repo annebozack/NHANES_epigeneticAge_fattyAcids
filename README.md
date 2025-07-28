@@ -4,6 +4,6 @@ This repositiory contains necessary scripts used in the analysis of Bozack et al
 
 <a href="https://annebozack.github.io/NHANES_epigeneticAge_fattyAcids/NHANES_fatty-acids_dataset.html">Dataset preparation</a> 
 
-<a href="https://annebozack.github.io/NHANES_epigeneticAge_fattyAcids/html/NHANES_fatty-acids_analyses">Analyses</a> 
+<a href="https://annebozack.github.io/NHANES_epigeneticAge_fattyAcids/NHANES_fatty-acids_analyses">Analyses</a> 
 
-<a href="https://annebozack.github.io/NHANES_epigeneticAge_fattyAcids/html/NHANES_fatty-acids_plotting">Data visualization</a> 
+<a href="https://annebozack.github.io/NHANES_epigeneticAge_fattyAcids/NHANES_fatty-acids_plotting">Data visualization</a> 
