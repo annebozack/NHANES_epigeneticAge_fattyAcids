@@ -283,8 +283,25 @@ rm(list = setdiff(ls(), c("df")))
 ```
 
 
-## Descriptive statistics: Tables 2 and S1 
+## Descriptive statistics: Tables 1 and S1 
 ```{r}
+# function to calculate p-values for differences between clusters
+pvalue <- function(x, ...) {
+    # Construct vectors of data y, and groups (strata) g
+    y <- unlist(x)
+    g <- factor(rep(1:length(x), times=sapply(x, length)))
+    if (is.numeric(y)) {
+        # For numeric variables
+        p <- kruskal.test(y, g)$p.value
+    } else {
+        # For categorical variables
+        p <- chisq.test(table(y, g))$p.value
+    }
+    # Format the p-value, using an HTML entity for the less-than sign.
+    # The initial empty string places the output on the line below the variable label.
+    c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
+}
+
 # complete cases
 table1(~ factor(RIAGENDR) + RIDAGEYR + factor(RIDRETH1) + BMXBMI + factor(SMOKE_3cat) + drinkvol + 
     factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR + DRXTKCAL +
@@ -296,6 +313,12 @@ table1(~ factor(RIAGENDR) + RIDAGEYR + factor(RIDRETH1) + BMXBMI + factor(SMOKE_
     factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR + DRXTKCAL +
     DRXTTFAT + cal_fat_perc + DRXTSFAT + cal_sfat_perc + DRXTMFAT + cal_mfat_perc + DRXTPFAT + cal_pfat_perc + psatfatRatio + omega6 + omega3, 
     data = df[df$use_fat,])
+
+# stratified by sex
+table1(~ RIDAGEYR + factor(RIDRETH1) + BMXBMI + factor(SMOKE_3cat) + drinkvol + 
+    factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR + DRXTKCAL +
+    DRXTTFAT + cal_fat_perc + DRXTSFAT + cal_sfat_perc + DRXTMFAT + cal_mfat_perc + DRXTPFAT + cal_pfat_perc + psatfatRatio + omega6 + omega3 | RIAGENDR, 
+    data = df[df$use_fat_covar,], extra.col=list(`P-value`=pvalue))
 ```
 
 ## Fatty acid subtypes: Table S2
@@ -307,6 +330,10 @@ table1(~ DRXTS040 + DRXTS060 + DRXTS080 + DRXTS100 + DRXTS120 + DRXTS140 + DRXTS
 # participants for impuation analyses
 table1(~ DRXTS040 + DRXTS060 + DRXTS080 + DRXTS100 + DRXTS120 + DRXTS140 + DRXTS160 + DRXTS180 + DRXTM161 + DRXTM181 + DRXTM201 + DRXTM221 + 
         DRXTP182 + DRXTP204 + DRXTP183 + DRXTP184 + DRXTP205 + DRXTP225 + DRXTP226, data = df[df$use_fat,])
+
+# stratified by sex
+table1(~ DRXTS040 + DRXTS060 + DRXTS080 + DRXTS100 + DRXTS120 + DRXTS140 + DRXTS160 + DRXTS180 + DRXTM161 + DRXTM181 + DRXTM201 + DRXTM221 + 
+        DRXTP182 + DRXTP204 + DRXTP183 + DRXTP184 + DRXTP205 + DRXTP225 + DRXTP226 | RIAGENDR, data = df[df$use_fat_covar,], extra.col=list(`P-value`=pvalue))
 ```
 
 ```{r, eval = F}
@@ -314,15 +341,31 @@ table1(~ DRXTS040 + DRXTS060 + DRXTS080 + DRXTS100 + DRXTS120 + DRXTS140 + DRXTS
 subtypes = c('DRXTS040', 'DRXTS060', 'DRXTS080', 'DRXTS100', 'DRXTS120', 'DRXTS140', 'DRXTS160', 'DRXTS180', 'DRXTM161', 'DRXTM181', 'DRXTM201', 'DRXTM221', 
         'DRXTP182', 'DRXTP204', 'DRXTP183', 'DRXTP184', 'DRXTP205', 'DRXTP225', 'DRXTP226')
 
+# primary analyses
 for (i in 1:length(subtypes)){
     print(subtypes[i])
     print(table(df[df$use_fat_covar,subtypes[i]] == 0))
     print(table(df[df$use_fat_covar,subtypes[i]] == 0)/1771)
 }
 
+# imputation analyses
 for (i in 1:length(subtypes)){
     print(subtypes[i])
     print(table(df[df$use_fat,subtypes[i]] == 0))
     print(table(df[df$use_fat,subtypes[i]] == 0)/2220)
+}
+
+# males
+for (i in 1:length(subtypes)){
+    print(subtypes[i])
+    print(table(df[df$use_fat_covar & df$RIAGENDR == 1,subtypes[i]] == 0))
+    print(table(df[df$use_fat_covar & df$RIAGENDR == 1,subtypes[i]] == 0)/952)
+}
+
+# females
+for (i in 1:length(subtypes)){
+    print(subtypes[i])
+    print(table(df[df$use_fat_covar & df$RIAGENDR == 2,subtypes[i]] == 0))
+    print(table(df[df$use_fat_covar & df$RIAGENDR == 2,subtypes[i]] == 0)/819)
 }
 ```

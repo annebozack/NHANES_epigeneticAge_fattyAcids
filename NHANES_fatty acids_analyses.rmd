@@ -36,16 +36,31 @@ dim(nhanesDesign)
 # 2532  288
 
 # subset survey design
+# participants with fatty acid and epigenetic age data
 nhanesDesign_use <- subset(nhanesDesign, use_fat)
 dim(nhanesDesign_use)
 # 2220  288
 
+# participants with complete covariate data
 nhanesDesign_use_covar <- subset(nhanesDesign, use_fat_covar)
 dim(nhanesDesign_use_covar)
 # 1771  288
+
+# male participants
+filterMale = ifelse(df$RIAGENDR == 1, TRUE, FALSE)
+nhanesDesign_male <- subset(nhanesDesign, filterMale & use_fat_covar)
+dim(nhanesDesign_male)
+# 952 288
+
+# female participants
+filterFemale = ifelse(df$RIAGENDR == 2, TRUE, FALSE)
+nhanesDesign_female <- subset(nhanesDesign, filterFemale & use_fat_covar)
+dim(nhanesDesign_female)
+# 819 288
 ```
 
-### Primary model - linear associations adjusted for age, age^2, gender, race/ethnicity, BMI, education, occupation, PIR, alcohol, smoking, and physical activity
+## Primary models
+### Linear associations adjusted for age, age^2, gender, race/ethnicity, BMI, education, occupation, PIR, alcohol, smoking, and physical activity
 ```{r, eval = F}
 # dataframe to store results
 fat_res_alcSmkAct = data.frame(nutrient = rep(c('Total fat', 'Saturated fat', 'Monounsaturated fat', 'Polyunsaturated fat', 'P:S ratio', 'Omega-3', 'Omega-6'), each = 11),
@@ -89,7 +104,7 @@ popTable2 = function(tab, vars_fat, vars_ead){
 
 fat_res_alcSmkAct = popTable2(fat_res_alcSmkAct, vars_fat, vars_ead)
 
-fat_res_alcSmkAct$B_CI = paste0(round(fat_res_alcSmkAct$coef, 2), ' ', fat_res_alcSmkAct$CI)
+fat_res_alcSmkAct$B_CI = paste0(round(fat_res_alcSmkAct$coef, 2), ' (', round(fat_res_alcSmkAct$CI_L, 2), ', ', round(fat_res_alcSmkAct$CI_H, 2), ')')
 
 write.csv(fat_res_alcSmkAct, 'fat_res_alcSmkAct.csv')
 ```
@@ -97,8 +112,6 @@ write.csv(fat_res_alcSmkAct, 'fat_res_alcSmkAct.csv')
 ```{r, warning=FALSE, message=FALSE, echo = F}
 kable(fat_res_alcSmkAct) %>% kable_classic()
 ```
-
-
 
 #### Omega-3 and omega-6 jointly adjusted model
 ```{r, eval = F}
@@ -138,7 +151,7 @@ popTable_omegas = function(tab, vars_ead){
 
 fat_res_alcSmkAct_omegas = popTable_omegas(fat_res_alcSmkAct_omegas, vars_ead)
 
-fat_res_alcSmkAct_omegas$B_CI = paste0(round(fat_res_alcSmkAct_omegas$coef, 2), ' ', fat_res_alcSmkAct_omegas$CI)
+fat_res_alcSmkAct_omegas$B_CI = paste0(round(fat_res_alcSmkAct_omegas$coef, 2), ' (', round(fat_res_alcSmkAct_omegas$CI_L, 2), ', ', round(fat_res_alcSmkAct_omegas$CI_H, 2), ')')
 
 write.csv(fat_res_alcSmkAct_omegas, 'fat_res_alcSmkAct_omegas.csv')
 
@@ -299,7 +312,7 @@ kable(fat_res_alcSmkAct_omegas) %>% kable_classic()
 ```
 
 
-#### Associations with individual fatty acids
+## Associations with individual fatty acids
 ```{r, eval = F}
 # dataframe to store results
 subtypes_res = data.frame(nutrient = rep(c('SFA 4:0', 'SFA 6:0', 'SFA 8:0', 'SFA 10:0', 'SFA 12:0', 'SFA 14:0', 'SFA 16:0', 'SFA 18:0',
@@ -345,6 +358,7 @@ popTable2_subtypes = function(tab, subtypes, vars_ead){
 }
 
 subtypes_res = popTable2_subtypes(subtypes_res, subtypes, vars_ead)
+
 subtypes_res$B_CI = paste0(round(subtypes_res$coef, 2), ' (', round(subtypes_res$CI_L, 2), ', ', round(subtypes_res$CI_H, 2), ')')
 
 write.csv(subtypes_res, 'subtypes_res_noScale.csv')
@@ -378,6 +392,323 @@ write.csv(type_p, 'subtypes_p.csv')
 kable(subtypes_res) %>% kable_classic()
 ```
 
+
+## Interaction with sex
+### Primary analyses
+```{r, eval = F}
+# dataframe to store results
+fat_res_alcSmkAct_sexInt = data.frame(nutrient = rep(c('Total fat', 'Saturated fat', 'Monounsaturated fat', 'Polyunsaturated fat', 'P:S ratio', 'Omega-3', 'Omega-6'), each = 11),
+  clock = rep(c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'VidalBralo', 'PhenoAge', 'GrimAge2', 
+        'DNAmTL', 'YangCell', 'DunedinPoAm'), times = 7),
+  p = NA)
+
+# NHANES variable names
+vars_fat = c('DRXTTFAT_log2', 'DRXTSFAT_log2', 'DRXTMFAT_log2', 'DRXTPFAT_log2', 'psatfatRatio', 'omega3_log2', 'omega6_log2')
+vars_ead = c('HorvathAge', 'SkinBloodAge', 'HannumAge', 'LinAge', 'ZhangAge', 'VidalBraloAge', 'PhenoAge', 'GrimAge2Mort', 'HorvathTelo', 'YangCell_scale', 'DunedinPoAm_scale')
+
+# functions to fill in table
+popTable1_sexInt = function(tab, i, j, k){
+    # i = EAD variable
+    # j = fat variable
+    # k = table row
+    mod = svyglm(formula(paste0(vars_ead[i], " ~ ", vars_fat[j], "*factor(RIAGENDR) +
+        RIDAGEYR + I(RIDAGEYR^2) + factor(RIDRETH1) +
+        BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+        factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+        design = nhanesDesign_use, 
+        family = gaussian())
+    tab[k,3] = summary(mod)$coef[23,4]
+    return(tab)
+}
+
+popTable2_sexInt = function(tab, vars_fat, vars_ead){
+    k = 1
+    for (j in 1:length(vars_fat)){
+        for (i in 1:length(vars_ead)){
+            tab = popTable1_sexInt(tab, i, j, k)
+            k = k + 1
+        }
+    }
+    return(tab)
+}
+
+fat_res_alcSmkAct_sexInt = popTable2_sexInt(fat_res_alcSmkAct_sexInt, vars_fat, vars_ead)
+
+write.csv(fat_res_alcSmkAct_sexInt, 'fat_res_alcSmkAct_sexInt.csv')
+```
+
+```{r, warning=FALSE, message=FALSE, echo = F}
+kable(fat_res_alcSmkAct_sexInt) %>% kable_classic()
+```
+
+#### Stratified analyses - male
+```{r, eval = F}
+# dataframe to store results
+fat_res_alcSmkAct_male = data.frame(nutrient = rep(c('Total fat', 'Saturated fat', 'Monounsaturated fat', 'Polyunsaturated fat', 'P:S ratio', 'Omega-3', 'Omega-6'), each = 11),
+  clock = rep(c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'VidalBralo', 'PhenoAge', 'GrimAge2', 
+        'DNAmTL', 'YangCell', 'DunedinPoAm'), times = 7),
+  coef = NA, p = NA, CI_L = NA, CI_H = NA, n = NA)
+
+# NHANES variable names
+vars_fat = c('DRXTTFAT_log2', 'DRXTSFAT_log2', 'DRXTMFAT_log2', 'DRXTPFAT_log2', 'psatfatRatio', 'omega3_log2', 'omega6_log2')
+vars_ead = c('HorvathAge', 'SkinBloodAge', 'HannumAge', 'LinAge', 'ZhangAge', 'VidalBraloAge', 'PhenoAge', 'GrimAge2Mort', 'HorvathTelo', 'YangCell_scale', 'DunedinPoAm_scale')
+
+# functions to fill in table
+popTable1_male = function(tab, i, j, k){
+    # i = EAD variable
+    # j = fat variable
+    # k = table row
+    mod = svyglm(formula(paste0(vars_ead[i], " ~ ", vars_fat[j], " +
+        RIDAGEYR + I(RIDAGEYR^2) + factor(RIDRETH1) +
+        BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+        factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+        design = nhanesDesign_male, 
+        family = gaussian())
+    tab[k,3] = summary(mod)$coef[2,1]
+    tab[k,4] = summary(mod)$coef[2,4]
+    tab[k,5] = confint(mod)[2,1]
+    tab[k,6] = confint(mod)[2,2]
+    tab[k,7] = nrow(mod$model)
+    return(tab)
+}
+
+popTable2_male = function(tab, vars_fat, vars_ead){
+    k = 1
+    for (j in 1:length(vars_fat)){
+        for (i in 1:length(vars_ead)){
+            tab = popTable1_male(tab, i, j, k)
+            k = k + 1
+        }
+    }
+    return(tab)
+}
+
+fat_res_alcSmkAct_male = popTable2_male(fat_res_alcSmkAct_male, vars_fat, vars_ead)
+
+fat_res_alcSmkAct_male$B_CI = paste0(round(fat_res_alcSmkAct_male$coef, 2), ' (', round(fat_res_alcSmkAct_male$CI_L, 2), ', ', round(fat_res_alcSmkAct_male$CI_H, 2), ')')
+
+write.csv(fat_res_alcSmkAct_male, 'fat_res_alcSmkAct_male.csv')
+```
+
+```{r, warning=FALSE, message=FALSE, echo = F}
+kable(fat_res_alcSmkAct_male) %>% kable_classic()
+```
+
+#### Stratified analyses - female
+```{r, eval = F}
+# dataframe to store results
+fat_res_alcSmkAct_female = data.frame(nutrient = rep(c('Total fat', 'Saturated fat', 'Monounsaturated fat', 'Polyunsaturated fat', 'P:S ratio', 'Omega-3', 'Omega-6'), each = 11),
+  clock = rep(c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'VidalBralo', 'PhenoAge', 'GrimAge2', 
+        'DNAmTL', 'YangCell', 'DunedinPoAm'), times = 7),
+  coef = NA, p = NA, CI_L = NA, CI_H = NA, n = NA)
+
+# NHANES variable names
+vars_fat = c('DRXTTFAT_log2', 'DRXTSFAT_log2', 'DRXTMFAT_log2', 'DRXTPFAT_log2', 'psatfatRatio', 'omega3_log2', 'omega6_log2')
+vars_ead = c('HorvathAge', 'SkinBloodAge', 'HannumAge', 'LinAge', 'ZhangAge', 'VidalBraloAge', 'PhenoAge', 'GrimAge2Mort', 'HorvathTelo', 'YangCell_scale', 'DunedinPoAm_scale')
+
+# functions to fill in table
+popTable1_female = function(tab, i, j, k){
+    # i = EAD variable
+    # j = fat variable
+    # k = table row
+    mod = svyglm(formula(paste0(vars_ead[i], " ~ ", vars_fat[j], " +
+        RIDAGEYR + I(RIDAGEYR^2) + factor(RIDRETH1) +
+        BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+        factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+        design = nhanesDesign_female, 
+        family = gaussian())
+    tab[k,3] = summary(mod)$coef[2,1]
+    tab[k,4] = summary(mod)$coef[2,4]
+    tab[k,5] = confint(mod)[2,1]
+    tab[k,6] = confint(mod)[2,2]
+    tab[k,7] = nrow(mod$model)
+    return(tab)
+}
+
+popTable2_female = function(tab, vars_fat, vars_ead){
+    k = 1
+    for (j in 1:length(vars_fat)){
+        for (i in 1:length(vars_ead)){
+            tab = popTable1_female(tab, i, j, k)
+            k = k + 1
+        }
+    }
+    return(tab)
+}
+
+fat_res_alcSmkAct_female = popTable2_female(fat_res_alcSmkAct_female, vars_fat, vars_ead)
+
+fat_res_alcSmkAct_female$B_CI = paste0(round(fat_res_alcSmkAct_female$coef, 2), ' (', round(fat_res_alcSmkAct_female$CI_L, 2), ', ', round(fat_res_alcSmkAct_female$CI_H, 2), ')')
+
+write.csv(fat_res_alcSmkAct_female, 'fat_res_alcSmkAct_female.csv')
+```
+
+```{r, warning=FALSE, message=FALSE, echo = F}
+kable(fat_res_alcSmkAct_female) %>% kable_classic()
+```
+
+### Associations with individual fatty acids
+```{r, eval = F}
+# dataframe to store results
+subtypes_res_sexInt = data.frame(nutrient = rep(c('SFA 4:0', 'SFA 6:0', 'SFA 8:0', 'SFA 10:0', 'SFA 12:0', 'SFA 14:0', 'SFA 16:0', 'SFA 18:0',
+                            'MUFA 16:1', 'MUFA 18:1', 'MUFA 20:1', 'MUFA 22:1',
+                            'PUFA 18:2', 'PUFA 20:4', 'PUFA 18:3', 'PUFA 20:5', 'PUFA 22:5', 'PUFA 22:6'), each = 11),
+  clock = rep(c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'VidalBralo', 'PhenoAge', 'GrimAge2', 
+        'DNAmTL', 'YangCell', 'DunedinPoAm'), times = 18),
+  p = NA)
+
+# NHANES variable names
+vars_ead = c("HorvathAge", "SkinBloodAge", "HannumAge", "LinAge", "ZhangAge", "VidalBraloAge", "PhenoAge", "GrimAge2Mort", "HorvathTelo", "YangCell_scale", "DunedinPoAm_scale")
+subtypes = c("DRXTS040_log2", "DRXTS060_log2", "DRXTS080_log2", "DRXTS100_log2", "DRXTS120_log2", "DRXTS140_log2", "DRXTS160_log2", "DRXTS180_log2", "DRXTM161_log2", 
+        "DRXTM181_log2", "DRXTM201_log2", "DRXTM221_log2", "DRXTP182_log2", "DRXTP204_log2", "DRXTP183_log2", "DRXTP205_log2", "DRXTP225_log2", "DRXTP226_log2")
+
+# functions to fill in table
+popTable1_subtypes_sexInt = function(tab, i, j, k){
+    # i = EAD variable
+    # j = fat variable
+    # k = table row
+    mod = svyglm(formula(paste0(vars_ead[i], " ~ ", subtypes[j], "*factor(RIAGENDR) +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_use, 
+            family = gaussian())
+    tab[k,3] = summary(mod)$coef[23,4]
+    return(tab)
+}
+
+popTable2_subtypes_sexInt = function(tab, subtypes, vars_ead){
+    k = 1
+    for (j in 1:length(subtypes)){
+        for (i in 1:length(vars_ead)){
+            tab = popTable1_subtypes_sexInt(tab, i, j, k)
+            k = k + 1
+        }
+    }
+    return(tab)
+}
+
+subtypes_res_sexInt = popTable2_subtypes_sexInt(subtypes_res_sexInt, subtypes, vars_ead)
+
+write.csv(subtypes_res_sexInt, 'subtypes_res_sexInt.csv')
+```
+
+```{r, warning=FALSE, message=FALSE, echo = F}
+kable(subtypes_res_sexInt) %>% kable_classic()
+```
+
+#### Stratified analyses - male
+```{r, eval = F}
+# dataframe to store results
+subtypes_res_male = data.frame(nutrient = rep(c('SFA 4:0', 'SFA 6:0', 'SFA 8:0', 'SFA 10:0', 'SFA 12:0', 'SFA 14:0', 'SFA 16:0', 'SFA 18:0',
+                            'MUFA 16:1', 'MUFA 18:1', 'MUFA 20:1', 'MUFA 22:1',
+                            'PUFA 18:2', 'PUFA 20:4', 'PUFA 18:3', 'PUFA 20:5', 'PUFA 22:5', 'PUFA 22:6'), each = 11),
+  clock = rep(c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'VidalBralo', 'PhenoAge', 'GrimAge2', 
+        'DNAmTL', 'YangCell', 'DunedinPoAm'), times = 18),
+  coef = NA, p = NA, CI_L = NA, CI_H = NA, n = NA)
+
+# NHANES variable names
+vars_ead = c("HorvathAge", "SkinBloodAge", "HannumAge", "LinAge", "ZhangAge", "VidalBraloAge", "PhenoAge", "GrimAge2Mort", "HorvathTelo", "YangCell_scale", "DunedinPoAm_scale")
+subtypes = c("DRXTS040_log2", "DRXTS060_log2", "DRXTS080_log2", "DRXTS100_log2", "DRXTS120_log2", "DRXTS140_log2", "DRXTS160_log2", "DRXTS180_log2", "DRXTM161_log2", 
+        "DRXTM181_log2", "DRXTM201_log2", "DRXTM221_log2", "DRXTP182_log2", "DRXTP204_log2", "DRXTP183_log2", "DRXTP205_log2", "DRXTP225_log2", "DRXTP226_log2")
+
+# functions to fill in table
+popTable1_subtypes_male = function(tab, i, j, k){
+    # i = EAD variable
+    # j = fat variable
+    # k = table row
+    mod = svyglm(formula(paste0(vars_ead[i], " ~ ", subtypes[j], " +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_male, 
+            family = gaussian())
+    tab[k,3] = summary(mod)$coef[2,1]
+    tab[k,4] = summary(mod)$coef[2,4]
+    tab[k,5] = confint(mod)[2,1]
+    tab[k,6] = confint(mod)[2,2]
+    tab[k,7] = nrow(mod$model)
+    return(tab)
+}
+
+popTable2_subtypes_male = function(tab, subtypes, vars_ead){
+    k = 1
+    for (j in 1:length(subtypes)){
+        for (i in 1:length(vars_ead)){
+            tab = popTable1_subtypes_male(tab, i, j, k)
+            k = k + 1
+        }
+    }
+    return(tab)
+}
+
+subtypes_res_male = popTable2_subtypes_male(subtypes_res_male, subtypes, vars_ead)
+
+subtypes_res_male$B_CI = paste0(round(subtypes_res_male$coef, 2), ' (', round(subtypes_res_male$CI_L, 2), ', ', round(subtypes_res_male$CI_H, 2), ')')
+
+write.csv(subtypes_res_male, 'subtypes_res_male.csv')
+```
+
+```{r, warning=FALSE, message=FALSE, echo = F}
+kable(subtypes_res_male) %>% kable_classic()
+```
+
+
+#### Stratified analyses - female
+```{r, eval = F}
+# dataframe to store results
+subtypes_res_female = data.frame(nutrient = rep(c('SFA 4:0', 'SFA 6:0', 'SFA 8:0', 'SFA 10:0', 'SFA 12:0', 'SFA 14:0', 'SFA 16:0', 'SFA 18:0',
+                            'MUFA 16:1', 'MUFA 18:1', 'MUFA 20:1', 'MUFA 22:1',
+                            'PUFA 18:2', 'PUFA 20:4', 'PUFA 18:3', 'PUFA 20:5', 'PUFA 22:5', 'PUFA 22:6'), each = 11),
+  clock = rep(c('Horvath1', 'Horvath2', 'Hannum', 'Lin', 'Zhang', 'VidalBralo', 'PhenoAge', 'GrimAge2', 
+        'DNAmTL', 'YangCell', 'DunedinPoAm'), times = 18),
+  coef = NA, p = NA, CI_L = NA, CI_H = NA, n = NA)
+
+# NHANES variable names
+vars_ead = c("HorvathAge", "SkinBloodAge", "HannumAge", "LinAge", "ZhangAge", "VidalBraloAge", "PhenoAge", "GrimAge2Mort", "HorvathTelo", "YangCell_scale", "DunedinPoAm_scale")
+subtypes = c("DRXTS040_log2", "DRXTS060_log2", "DRXTS080_log2", "DRXTS100_log2", "DRXTS120_log2", "DRXTS140_log2", "DRXTS160_log2", "DRXTS180_log2", "DRXTM161_log2", 
+        "DRXTM181_log2", "DRXTM201_log2", "DRXTM221_log2", "DRXTP182_log2", "DRXTP204_log2", "DRXTP183_log2", "DRXTP205_log2", "DRXTP225_log2", "DRXTP226_log2")
+
+# functions to fill in table
+popTable1_subtypes_female = function(tab, i, j, k){
+    # i = EAD variable
+    # j = fat variable
+    # k = table row
+    mod = svyglm(formula(paste0(vars_ead[i], " ~ ", subtypes[j], " +
+            RIDAGEYR + I(RIDAGEYR^2) + factor(RIDRETH1) +
+            BMXBMI + DRXTKCAL + factor(SMOKE_3cat) + drinkvol + factor(active_modvig) +
+            factor(EDUCATION) + factor(OCCUPATION) + INDFMPIR")),
+            design = nhanesDesign_female, 
+            family = gaussian())
+    tab[k,3] = summary(mod)$coef[2,1]
+    tab[k,4] = summary(mod)$coef[2,4]
+    tab[k,5] = confint(mod)[2,1]
+    tab[k,6] = confint(mod)[2,2]
+    tab[k,7] = nrow(mod$model)
+    return(tab)
+}
+
+popTable2_subtypes_female = function(tab, subtypes, vars_ead){
+    k = 1
+    for (j in 1:length(subtypes)){
+        for (i in 1:length(vars_ead)){
+            tab = popTable1_subtypes_female(tab, i, j, k)
+            k = k + 1
+        }
+    }
+    return(tab)
+}
+
+subtypes_res_female = popTable2_subtypes_female(subtypes_res_female, subtypes, vars_ead)
+
+subtypes_res_female$B_CI = paste0(round(subtypes_res_female$coef, 2), ' (', round(subtypes_res_female$CI_L, 2), ', ', round(subtypes_res_female$CI_H, 2), ')')
+
+write.csv(subtypes_res_female, 'subtypes_res_female.csv')
+```
+
+```{r, warning=FALSE, message=FALSE, echo = F}
+kable(subtypes_res_female) %>% kable_classic()
+```
 
 ## Sensitivity analyses with imputed covatiates
 ```{r, eval = F}
@@ -530,7 +861,7 @@ kable(fat_res_alcSmkAct_imp) %>% kable_classic()
 ```
 
 
-#### Associations with individual fatty acids
+### Associations with individual fatty acids
 ```{r, eval = F}
 # without scaling epigenetic age variables
 vars_ead = c("HorvathAge", "SkinBloodAge", "HannumAge", "LinAge", "ZhangAge", "VidalBraloAge", "PhenoAge", "GrimAge2Mort", "HorvathTelo", "YangCell_scale", "DunedinPoAm_scale")
@@ -574,7 +905,9 @@ popTable2_subtypes_imp = function(tab, subtypes, vars_ead){
 }
 
 subtypes_res_imp = popTable2_subtypes_imp(subtypes_res_imp, subtypes, vars_ead)
+
 subtypes_res_imp$B_CI = paste0(round(subtypes_res_imp$coef, 2), ' (', round(subtypes_res_imp$CI_L, 2), ', ', round(subtypes_res_imp$CI_H, 2), ')')
+
 write.csv(subtypes_res_imp, 'subtypes_res_noScale_imp.csv')
 ```
 
